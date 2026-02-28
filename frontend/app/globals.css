@@ -1,0 +1,101 @@
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 44px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 32px;
+}
+
+.sub {
+  margin-top: 8px;
+  color: #94a3b8;
+}
+
+.panel {
+  border: 1px solid #334155;
+  border-radius: 12px;
+  padding: 16px;
+  background: #111827;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+textarea,
+select,
+input {
+  width: 100%;
+  background: #0b1220;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.row {
+  margin-top: 12px;
+}
+
+.actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid #3b82f6;
+  background: #1d4ed8;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #2563eb;
+}
+
+.grid {
+  margin-top: 16px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.foot {
+  margin-top: 14px;
+  color: #94a3b8;
+  font-size: 14px;
+}

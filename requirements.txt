@@ -1,0 +1,8 @@
+streamlit
+anthropic
+python-docx
+gspread
+google-auth
+python-dotenv
+fastapi
+uvicorn
