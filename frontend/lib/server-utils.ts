@@ -218,7 +218,24 @@ export async function appendToGoogleSheet(args: {
   const serviceAccountRaw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!sheetId || !serviceAccountRaw) throw new Error("Missing Google Sheets environment variables.");
 
-  const credentials = JSON.parse(serviceAccountRaw);
+  let credentials: Record<string, string>;
+  try {
+    credentials = JSON.parse(serviceAccountRaw);
+  } catch {
+    // Accept base64-encoded JSON as a fallback format in Vercel env vars.
+    try {
+      const decoded = Buffer.from(serviceAccountRaw, "base64").toString("utf8");
+      credentials = JSON.parse(decoded);
+    } catch {
+      throw new Error(
+        "GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste raw JSON or base64-encoded JSON."
+      );
+    }
+  }
+  if (typeof credentials.private_key === "string") {
+    credentials.private_key = credentials.private_key.replace(/\\n/g, "\n");
+  }
+
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -239,10 +256,27 @@ export async function appendToGoogleSheet(args: {
     args.outputPath || ""
   ];
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: sheetId,
-    range: `${sheetTab}!A:J`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [row] }
-  });
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: `${sheetTab}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] }
+    });
+    return;
+  } catch {
+    // Fallback to first worksheet when tab name is mismatched (common with emoji tab names).
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: sheetId,
+      fields: "sheets(properties(title))"
+    });
+    const firstTitle = meta.data.sheets?.[0]?.properties?.title;
+    if (!firstTitle) throw new Error("Could not determine target sheet tab.");
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: `${firstTitle}!A:J`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [row] }
+    });
+  }
 }
