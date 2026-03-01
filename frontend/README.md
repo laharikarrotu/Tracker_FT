@@ -13,23 +13,24 @@ This folder contains a Next.js frontend for your resume tailoring workflow.
   - Extracted JD preview panel
   - Output panel with status, resume path, and email template
 
-## Run locally
+## Run locally (Vercel-only architecture)
 
 ```bash
-# in repo root
-pip install -r requirements.txt
-uvicorn backend.main:app --reload --port 8000
-
-# in another terminal
 cd frontend
 npm install
 npm run dev
 ```
 
-Create `frontend/.env.local`:
+Create `frontend/.env.local` (example):
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ANTHROPIC_API_KEY=your_claude_key
+GOOGLE_SHEET_ID=1noFNOro2CivUnxUHGqeXDMmQ-6cgQFYa8MdZ4d3YSTw
+GOOGLE_SHEET_TAB=Applications
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+STRICT_CONTRACT_MODE=true
+# optional; default is same-origin
+NEXT_PUBLIC_API_BASE_URL=
 ```
 
 ## Deploy to Vercel
@@ -37,13 +38,15 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 - Push this project to GitHub
 - Import repo into Vercel
 - Set root directory to `frontend`
-- Set env var `NEXT_PUBLIC_API_BASE_URL` to your deployed backend URL
+- Add env vars from `.env.local` in Vercel project settings
 - Deploy
 
-## Backend connection note
+## API routes included in this Next.js app
 
-This frontend already calls backend API endpoints:
+This app includes server-side Next.js routes (no separate host):
 
 - `POST /api/parse-and-log`
 - `POST /api/tailor-resume`
 - `POST /api/generate-email`
+
+Current `/api/tailor-resume` returns tailored content + sheet update metadata in Vercel mode. If you want direct DOCX file downloads from this route, add a dedicated export endpoint next.

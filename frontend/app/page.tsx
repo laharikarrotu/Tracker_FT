@@ -12,7 +12,7 @@ type ParsedJD = {
   is_contract_like?: boolean;
 };
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export default function HomePage() {
   const [jobDescription, setJobDescription] = useState("");
@@ -74,6 +74,12 @@ export default function HomePage() {
       setIsBusy(true);
       const payload = await postJSON<{
         parsed: ParsedJD;
+        tailored: {
+          summary_points: string[];
+          experience_points: string[];
+          skills_line: string;
+          contract_alignment_note: string;
+        };
         output_path: string;
         sheet_status: string;
       }>("/api/tailor-resume", {
@@ -170,7 +176,7 @@ export default function HomePage() {
       </section>
 
       <p className="foot">
-        API base URL: <code>{API_BASE}</code>. Set <code>NEXT_PUBLIC_API_BASE_URL</code> on Vercel.
+        API base URL: <code>{API_BASE || "same-origin"}</code>. Leave unset for Vercel-only mode.
       </p>
     </main>
   );
