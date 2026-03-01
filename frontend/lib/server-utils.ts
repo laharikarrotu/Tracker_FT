@@ -176,7 +176,7 @@ Parsed fields:
     summary_points: (summary_points.concat(Array(summaryCount).fill("")).slice(0, summaryCount) as string[]),
     experience_points: (experience_points.concat(Array(experienceCount).fill("")).slice(0, experienceCount) as string[]),
     skills_line: String(data.skills_line ?? "").trim(),
-    tailored_for_role: String(data.tailored_for_role ?? parsed.title || "Data Engineer").trim(),
+    tailored_for_role: String(data.tailored_for_role ?? parsed.title ?? "Data Engineer").trim(),
     contract_alignment_note: String(data.contract_alignment_note ?? parsed.notes).trim()
   };
 }
