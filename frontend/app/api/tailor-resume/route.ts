@@ -17,11 +17,6 @@ type Body = {
   template_file_name?: string;
 };
 
-function clampLine(value: string, maxChars: number) {
-  const text = value.trim().replace(/\s+/g, " ");
-  return text.length <= maxChars ? text : `${text.slice(0, maxChars - 3).trim()}...`;
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as Body;
@@ -44,8 +39,8 @@ export async function POST(req: NextRequest) {
     const experienceCount = 6;
 
     const tailored = await generateTailoredContent(parsed, summaryCount, experienceCount);
-    const summary_points = tailored.summary_points.map((x) => clampLine(x, 125));
-    const experience_points = tailored.experience_points.map((x) => clampLine(x, 165));
+    const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
+    const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
 
     const replacementCaps = { maxSummaryReplacements: 2, maxExperienceReplacements: 6 };
 
