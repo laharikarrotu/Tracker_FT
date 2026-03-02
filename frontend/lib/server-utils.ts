@@ -243,38 +243,96 @@ export async function appendToGoogleSheet(args: {
   const sheets = google.sheets({ version: "v4", auth });
 
   const now = new Date();
-  const row = [
-    now.toISOString(),
-    args.parsed.title,
-    args.parsed.company_or_vendor,
-    args.parsed.location,
-    args.parsed.contract_type || (args.parsed.is_contract_like ? "C2C/Contract" : ""),
-    args.parsed.skills.join(", "),
-    String(args.parsed.fit_score),
-    args.status,
-    args.notes || args.parsed.notes,
-    args.outputPath || ""
-  ];
+  const nowISO = now.toISOString();
+  const contractType = args.parsed.contract_type || (args.parsed.is_contract_like ? "C2C/Contract" : "");
+  const skillsBrief = args.parsed.skills.join(", ");
+  const note = args.notes || args.parsed.notes;
 
-  try {
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const tabNorm = (value: string) => normalize(value).replace(/dashboard|howtouse/g, "");
+  const headerToValue = (header: string): string => {
+    const h = normalize(header);
+    const map: Record<string, string> = {
+      dateapplied: nowISO,
+      submissiondate: nowISO,
+      platformsource: "Portal/JD Paste",
+      platformused: "Portal/JD Paste",
+      platform: "Portal/JD Paste",
+      companyname: args.parsed.company_or_vendor,
+      agencycompany: args.parsed.company_or_vendor,
+      vendorrecruiter: args.parsed.company_or_vendor,
+      vendorname: args.parsed.company_or_vendor,
+      clientname: args.parsed.company_or_vendor,
+      endclient: "",
+      jobtitle: args.parsed.title,
+      positiontitle: args.parsed.title,
+      position: args.parsed.title,
+      jobidurl: "",
+      location: args.parsed.location,
+      remotehybridonsite: "",
+      contracttype: contractType,
+      payrate: "",
+      payratesubmitted: "",
+      labelstatus: args.status,
+      status: args.status,
+      requirementsbrief: skillsBrief,
+      requirements: skillsBrief,
+      notes: note,
+      generalnotes: note,
+      followupdate: "",
+      interviewdate: "",
+      dayssinceapplied: "",
+      vendoremail: "",
+      vendorphone: "",
+      confirmaton: "",
+      confirmation: "",
+      interviewcalled: "",
+      outcome: "",
+      timessubmitted: "",
+      companyinemail: "",
+      passport: "",
+      passportno: "",
+      fitscore: String(args.parsed.fit_score),
+      resumeoutputpath: args.outputPath || ""
+    };
+    return map[h] ?? "";
+  };
+
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets(properties(title))"
+  });
+  const titles = (metadata.data.sheets || [])
+    .map((s) => s.properties?.title)
+    .filter((x): x is string => Boolean(x));
+
+  const pickTitle = (keyword: string) =>
+    titles.find((t) => tabNorm(t).includes(keyword)) || null;
+
+  const targetTabs = [
+    pickTitle("applications"),
+    pickTitle("vendordb"),
+    pickTitle("submissions")
+  ].filter((x): x is string => Boolean(x));
+
+  // Fallback to configured tab if the expected tabs are not found.
+  if (targetTabs.length === 0) {
+    targetTabs.push(sheetTab);
+  }
+
+  for (const tab of targetTabs) {
+    const headerResp = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: `${tab}!2:2`
+    });
+    const headers = (headerResp.data.values?.[0] || []).map((x) => String(x).trim());
+    if (headers.length === 0) {
+      continue;
+    }
+    const row = headers.map((h) => headerToValue(h));
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
-      range: `${sheetTab}!A:J`,
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [row] }
-    });
-    return;
-  } catch {
-    // Fallback to first worksheet when tab name is mismatched (common with emoji tab names).
-    const meta = await sheets.spreadsheets.get({
-      spreadsheetId: sheetId,
-      fields: "sheets(properties(title))"
-    });
-    const firstTitle = meta.data.sheets?.[0]?.properties?.title;
-    if (!firstTitle) throw new Error("Could not determine target sheet tab.");
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: sheetId,
-      range: `${firstTitle}!A:J`,
+      range: `${tab}!A:ZZ`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [row] }
     });
