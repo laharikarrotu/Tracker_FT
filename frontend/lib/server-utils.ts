@@ -5,8 +5,13 @@ export type ParsedJD = {
   raw_jd: string;
   title: string;
   company_or_vendor: string;
+  recruiter_name: string;
+  vendor_email: string;
   location: string;
   contract_type: string;
+  remote_mode: string;
+  pay_rate: string;
+  job_id_url: string;
   skills: string[];
   notes: string;
   is_contract_like: boolean;
@@ -46,16 +51,42 @@ function firstMatch(pattern: RegExp, value: string): string {
   return match?.[1]?.trim() ?? "";
 }
 
+function firstEmail(value: string): string {
+  const match = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match?.[0]?.trim() ?? "";
+}
+
+function firstURL(value: string): string {
+  const match = value.match(/https?:\/\/[^\s)]+/i);
+  return match?.[0]?.trim() ?? "";
+}
+
 export function parseJobDescription(rawJD: string): ParsedJD {
   const lines = rawJD.split("\n").map((x) => x.trim()).filter(Boolean);
   const defaultTitle = lines[0]?.slice(0, 120) ?? "Data Engineer";
   const title = firstMatch(/(?:title|position|role)\s*[:\-]\s*([^\n\r]+)/i, rawJD) || defaultTitle;
-  const company_or_vendor = firstMatch(/(?:company|client|vendor)\s*[:\-]\s*([^\n\r]+)/i, rawJD);
+  const company_or_vendor =
+    firstMatch(/(?:company|client|vendor)\s*[:\-]\s*([^\n\r]+)/i, rawJD) ||
+    firstMatch(/from\s+([A-Za-z0-9 .&-]+?)(?:[\n,]|please find|role:)/i, rawJD);
   const location = firstMatch(/(?:location)\s*[:\-]\s*([^\n\r]+)/i, rawJD);
   const contract_type = firstMatch(/(?:employment type|contract type|type)\s*[:\-]\s*([^\n\r]+)/i, rawJD);
+  const recruiter_name =
+    firstMatch(/(?:i am|i'm)\s+([^,\n]+)/i, rawJD) ||
+    firstMatch(/(?:recruiter)\s*[:\-]\s*([^\n\r]+)/i, rawJD);
+  const vendor_email = firstMatch(/(?:share suitable profiles to|email)\s*[:\-]?\s*([^\s,\n]+)/i, rawJD) || firstEmail(rawJD);
+  const job_id_url = firstMatch(/(?:job id\s*\/\s*url|job id|requisition id)\s*[:\-]\s*([^\n\r]+)/i, rawJD) || firstURL(rawJD);
+  const pay_rate = firstMatch(
+    /(?:pay rate|rate|budget)\s*[:\-]\s*([^\n\r]+)/i,
+    rawJD
+  ) || firstMatch(/(\$\s*\d+[kK]?(?:\s*[-to]+\s*\$?\s*\d+[kK]?)?)/i, rawJD);
   const lower = rawJD.toLowerCase();
   const skills = DATA_ENGINEER_SKILLS.filter((skill) => lower.includes(skill)).sort();
   const is_contract_like = CONTRACT_TERMS.some((term) => lower.includes(term));
+  const remote_mode =
+    (lower.includes("hybrid") && "Hybrid") ||
+    (lower.includes("remote") && "Remote") ||
+    (lower.includes("onsite") && "Onsite") ||
+    "";
 
   let fit_score = 0;
   if (lower.includes("data engineer") || lower.includes("data engineering")) fit_score += 40;
@@ -67,8 +98,13 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     raw_jd: rawJD,
     title,
     company_or_vendor,
+    recruiter_name,
+    vendor_email,
     location,
-    contract_type,
+    contract_type: contract_type || (is_contract_like ? "Contract" : ""),
+    remote_mode,
+    pay_rate,
+    job_id_url,
     skills,
     notes: is_contract_like ? "Contract-focused fit" : "Needs manual contract check",
     is_contract_like,
@@ -118,6 +154,44 @@ function anthropicClient() {
   return new Anthropic({ apiKey });
 }
 
+async function callAnthropicWithFallback(prompt: string): Promise<string> {
+  const client = anthropicClient();
+  const configured = (process.env.ANTHROPIC_MODEL || "").trim();
+  const models = [
+    configured,
+    "claude-3-7-sonnet-latest",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-haiku-20240307"
+  ].filter(Boolean);
+
+  let lastError: unknown = null;
+  for (const model of models) {
+    try {
+      const response = await client.messages.create({
+        model,
+        max_tokens: 1600,
+        temperature: 0.3,
+        messages: [{ role: "user", content: prompt }]
+      });
+      return response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n")
+        .trim();
+    } catch (error) {
+      lastError = error;
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!msg.toLowerCase().includes("not_found")) {
+        // For non-model errors (auth/quota), fail fast.
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("No Anthropic model is available for this API key.");
+}
+
 export async function generateTailoredContent(
   parsed: ParsedJD,
   summaryCount: number,
@@ -152,17 +226,7 @@ Parsed fields:
 - fit_score: ${parsed.fit_score}
 `;
 
-  const response = await client.messages.create({
-    model: "claude-3-5-sonnet-latest",
-    max_tokens: 1600,
-    temperature: 0.3,
-    messages: [{ role: "user", content: prompt }]
-  });
-
-  const text = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
+  const text = await callAnthropicWithFallback(prompt);
   const data = extractJSON(text);
 
   const summary_points = Array.isArray(data.summary_points)
@@ -182,7 +246,6 @@ Parsed fields:
 }
 
 export async function generateSubmissionEmail(parsed: ParsedJD): Promise<string> {
-  const client = anthropicClient();
   const prompt = `
 Write a concise, professional C2C submission email for a Data Engineer role.
 Return plain text only, under 180 words.
@@ -194,17 +257,7 @@ Location: ${parsed.location}
 Contract type: ${parsed.contract_type}
 Skills: ${parsed.skills.join(", ")}
 `;
-  const response = await client.messages.create({
-    model: "claude-3-5-sonnet-latest",
-    max_tokens: 450,
-    temperature: 0.2,
-    messages: [{ role: "user", content: prompt }]
-  });
-  return response.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
+  return callAnthropicWithFallback(prompt);
 }
 
 export async function appendToGoogleSheet(args: {
@@ -261,18 +314,18 @@ export async function appendToGoogleSheet(args: {
       companyname: args.parsed.company_or_vendor,
       agencycompany: args.parsed.company_or_vendor,
       vendorrecruiter: args.parsed.company_or_vendor,
-      vendorname: args.parsed.company_or_vendor,
+      vendorname: args.parsed.recruiter_name || args.parsed.company_or_vendor,
       clientname: args.parsed.company_or_vendor,
       endclient: "",
       jobtitle: args.parsed.title,
       positiontitle: args.parsed.title,
       position: args.parsed.title,
-      jobidurl: "",
+      jobidurl: args.parsed.job_id_url,
       location: args.parsed.location,
-      remotehybridonsite: "",
+      remotehybridonsite: args.parsed.remote_mode,
       contracttype: contractType,
-      payrate: "",
-      payratesubmitted: "",
+      payrate: args.parsed.pay_rate,
+      payratesubmitted: args.parsed.pay_rate,
       labelstatus: args.status,
       status: args.status,
       requirementsbrief: skillsBrief,
@@ -282,7 +335,7 @@ export async function appendToGoogleSheet(args: {
       followupdate: "",
       interviewdate: "",
       dayssinceapplied: "",
-      vendoremail: "",
+      vendoremail: args.parsed.vendor_email,
       vendorphone: "",
       confirmaton: "",
       confirmation: "",

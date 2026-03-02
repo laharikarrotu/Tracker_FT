@@ -24,8 +24,13 @@ export async function POST(req: NextRequest) {
       parsed: {
         title: parsed.title,
         company_or_vendor: parsed.company_or_vendor,
+        recruiter_name: parsed.recruiter_name,
+        vendor_email: parsed.vendor_email,
         location: parsed.location,
         contract_type: parsed.contract_type,
+        remote_mode: parsed.remote_mode,
+        pay_rate: parsed.pay_rate,
+        job_id_url: parsed.job_id_url,
         skills: parsed.skills,
         fit_score: parsed.fit_score,
         is_contract_like: parsed.is_contract_like

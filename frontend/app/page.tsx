@@ -5,8 +5,13 @@ import { FormEvent, useState } from "react";
 type ParsedJD = {
   title: string;
   company_or_vendor: string;
+  recruiter_name?: string;
+  vendor_email?: string;
   location: string;
   contract_type: string;
+  remote_mode?: string;
+  pay_rate?: string;
+  job_id_url?: string;
   skills: string[];
   fit_score?: number;
   is_contract_like?: boolean;
@@ -155,8 +160,13 @@ export default function HomePage() {
             <ul>
               <li><strong>Title:</strong> {parsed.title}</li>
               <li><strong>Company/Vendor:</strong> {parsed.company_or_vendor || "Not specified"}</li>
+              <li><strong>Recruiter Name:</strong> {parsed.recruiter_name || "Not specified"}</li>
+              <li><strong>Vendor Email:</strong> {parsed.vendor_email || "Not specified"}</li>
               <li><strong>Location:</strong> {parsed.location}</li>
+              <li><strong>Work Mode:</strong> {parsed.remote_mode || "Not specified"}</li>
               <li><strong>Contract Type:</strong> {parsed.contract_type || "Not specified"}</li>
+              <li><strong>Pay Rate:</strong> {parsed.pay_rate || "Not specified"}</li>
+              <li><strong>Job URL/ID:</strong> {parsed.job_id_url || "Not specified"}</li>
               <li><strong>Skills:</strong> {parsed.skills.join(", ") || "No skills detected yet"}</li>
               <li><strong>Fit Score:</strong> {parsed.fit_score ?? "N/A"}</li>
               <li><strong>Contract-like:</strong> {String(parsed.is_contract_like ?? false)}</li>
