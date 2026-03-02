@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appendToGoogleSheet, applyOverrides, enforceContractMode, parseJobDescription } from "@/lib/server-utils";
+import { appendToGoogleSheet, applyOverrides, parseJobDescription } from "@/lib/server-utils";
 
 type Body = {
   job_description: string;
@@ -17,7 +17,6 @@ export async function POST(req: NextRequest) {
     }
 
     const parsed = applyOverrides(parseJobDescription(body.job_description), body);
-    enforceContractMode(parsed);
     await appendToGoogleSheet({ parsed, status: "Not Applied Yet" });
 
     return NextResponse.json({

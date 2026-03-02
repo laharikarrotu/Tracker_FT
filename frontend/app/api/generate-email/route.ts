@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applyOverrides, enforceContractMode, generateSubmissionEmail, parseJobDescription } from "@/lib/server-utils";
+import { applyOverrides, generateSubmissionEmail, parseJobDescription } from "@/lib/server-utils";
 
 type Body = {
   job_description: string;
@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
     }
     const parsed = applyOverrides(parseJobDescription(body.job_description), body);
-    enforceContractMode(parsed);
     const email_template = await generateSubmissionEmail(parsed);
     return NextResponse.json({ email_template });
   } catch (error) {

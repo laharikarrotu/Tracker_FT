@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   appendToGoogleSheet,
   applyOverrides,
-  enforceContractMode,
   generateTailoredDocxFromTemplate,
   generateTailoredContent,
   parseJobDescription
@@ -35,7 +34,6 @@ export async function POST(req: NextRequest) {
     }
 
     const parsed = applyOverrides(parseJobDescription(body.job_description), body);
-    enforceContractMode(parsed);
 
     const replacement_mode = body.replacement_mode || "minimal";
     const summaryCount = replacement_mode === "aggressive" ? 4 : replacement_mode === "balanced" ? 2 : 1;
