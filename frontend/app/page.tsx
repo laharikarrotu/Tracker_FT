@@ -21,14 +21,11 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export default function HomePage() {
   const [jobDescription, setJobDescription] = useState("");
-  const [replacementMode, setReplacementMode] = useState("minimal");
   const [status, setStatus] = useState("Ready");
   const [emailTemplate, setEmailTemplate] = useState("");
   const [resumePath, setResumePath] = useState("");
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [templateFileName, setTemplateFileName] = useState("");
-  const [templateBase64, setTemplateBase64] = useState("");
 
   const apiPayload = {
     job_description: jobDescription,
@@ -77,10 +74,6 @@ export default function HomePage() {
       setStatus("Paste a JD first.");
       return;
     }
-    if (!templateBase64) {
-      setStatus("Upload your base resume DOCX first.");
-      return;
-    }
     try {
       setIsBusy(true);
       const payload = await postJSON<{
@@ -96,10 +89,7 @@ export default function HomePage() {
         file_name: string;
         sheet_status: string;
       }>("/api/tailor-resume", {
-        ...apiPayload,
-        replacement_mode: replacementMode,
-        template_docx_base64: templateBase64,
-        template_file_name: templateFileName || "Mehar_Lahari_Resume_DE.docx"
+        ...apiPayload
       });
       setParsed(payload.parsed);
       setResumePath(payload.output_path);
@@ -158,33 +148,9 @@ export default function HomePage() {
         />
 
         <div className="row">
-          <label htmlFor="resume-template">Resume Template (.docx)</label>
-          <input
-            id="resume-template"
-            type="file"
-            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              setTemplateFileName(file.name);
-              const reader = new FileReader();
-              reader.onload = () => {
-                const result = String(reader.result || "");
-                const base64 = result.includes(",") ? result.split(",")[1] : result;
-                setTemplateBase64(base64);
-              };
-              reader.readAsDataURL(file);
-            }}
-          />
-        </div>
-
-        <div className="row">
-          <label htmlFor="mode">Replacement Mode</label>
-          <select id="mode" value={replacementMode} onChange={(e) => setReplacementMode(e.target.value)}>
-            <option value="minimal">Minimal (1 summary + 2 bullets)</option>
-            <option value="balanced">Balanced (2 summary + 6 bullets)</option>
-            <option value="aggressive">Aggressive (full replacement)</option>
-          </select>
+          <small>
+            Uses your configured base Data Engineer DOCX template on the server for every tailored resume.
+          </small>
         </div>
 
         <div className="actions">

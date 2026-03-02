@@ -13,7 +13,6 @@ type Body = {
   override_company?: string;
   override_location?: string;
   override_contract?: string;
-  replacement_mode?: "minimal" | "balanced" | "aggressive";
   template_docx_base64?: string;
   template_file_name?: string;
 };
@@ -29,29 +28,29 @@ export async function POST(req: NextRequest) {
     if (!body.job_description?.trim()) {
       return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
     }
-    if (!body.template_docx_base64?.trim()) {
-      return NextResponse.json({ detail: "Resume template DOCX is required." }, { status: 400 });
+    const serverTemplate = (process.env.BASE_RESUME_DOCX_BASE64 || "").trim();
+    const templateDocxBase64 = (body.template_docx_base64 || serverTemplate).trim();
+    if (!templateDocxBase64) {
+      return NextResponse.json(
+        { detail: "Missing base resume template. Set BASE_RESUME_DOCX_BASE64 in Vercel." },
+        { status: 400 }
+      );
     }
 
     const parsed = applyOverrides(parseJobDescription(body.job_description), body);
 
-    const replacement_mode = body.replacement_mode || "minimal";
-    const summaryCount = replacement_mode === "aggressive" ? 4 : replacement_mode === "balanced" ? 2 : 1;
-    const experienceCount = replacement_mode === "aggressive" ? 10 : replacement_mode === "balanced" ? 6 : 2;
+    // Single tailored mode: consistent edits while preserving resume structure.
+    const summaryCount = 2;
+    const experienceCount = 6;
 
     const tailored = await generateTailoredContent(parsed, summaryCount, experienceCount);
     const summary_points = tailored.summary_points.map((x) => clampLine(x, 125));
     const experience_points = tailored.experience_points.map((x) => clampLine(x, 165));
 
-    const replacementCaps =
-      replacement_mode === "aggressive"
-        ? { maxSummaryReplacements: 4, maxExperienceReplacements: 10 }
-        : replacement_mode === "balanced"
-          ? { maxSummaryReplacements: 2, maxExperienceReplacements: 6 }
-          : { maxSummaryReplacements: 1, maxExperienceReplacements: 2 };
+    const replacementCaps = { maxSummaryReplacements: 2, maxExperienceReplacements: 6 };
 
     const docx_base64 = await generateTailoredDocxFromTemplate(
-      body.template_docx_base64,
+      templateDocxBase64,
       {
         ...tailored,
         summary_points,
