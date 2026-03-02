@@ -3,6 +3,7 @@ import {
   appendToGoogleSheet,
   applyOverrides,
   enforceContractMode,
+  generateTailoredDocxFromTemplate,
   generateTailoredContent,
   parseJobDescription
 } from "@/lib/server-utils";
@@ -14,6 +15,8 @@ type Body = {
   override_location?: string;
   override_contract?: string;
   replacement_mode?: "minimal" | "balanced" | "aggressive";
+  template_docx_base64?: string;
+  template_file_name?: string;
 };
 
 function clampLine(value: string, maxChars: number) {
@@ -27,6 +30,9 @@ export async function POST(req: NextRequest) {
     if (!body.job_description?.trim()) {
       return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
     }
+    if (!body.template_docx_base64?.trim()) {
+      return NextResponse.json({ detail: "Resume template DOCX is required." }, { status: 400 });
+    }
 
     const parsed = applyOverrides(parseJobDescription(body.job_description), body);
     enforceContractMode(parsed);
@@ -39,7 +45,24 @@ export async function POST(req: NextRequest) {
     const summary_points = tailored.summary_points.map((x) => clampLine(x, 125));
     const experience_points = tailored.experience_points.map((x) => clampLine(x, 165));
 
-    const output_path = "Generated on Vercel API (DOCX export endpoint can be added next).";
+    const replacementCaps =
+      replacement_mode === "aggressive"
+        ? { maxSummaryReplacements: 4, maxExperienceReplacements: 10 }
+        : replacement_mode === "balanced"
+          ? { maxSummaryReplacements: 2, maxExperienceReplacements: 6 }
+          : { maxSummaryReplacements: 1, maxExperienceReplacements: 2 };
+
+    const docx_base64 = await generateTailoredDocxFromTemplate(
+      body.template_docx_base64,
+      {
+        ...tailored,
+        summary_points,
+        experience_points
+      },
+      replacementCaps
+    );
+
+    const output_path = `generated/${Date.now()}-${(body.template_file_name || "tailored").replace(/\s+/g, "_")}`;
     await appendToGoogleSheet({
       parsed,
       status: "Applied",
@@ -69,6 +92,8 @@ export async function POST(req: NextRequest) {
         contract_alignment_note: tailored.contract_alignment_note
       },
       output_path,
+      docx_base64,
+      file_name: `tailored-${(body.template_file_name || "resume").replace(/\s+/g, "_")}`,
       sheet_status: "Tailored record logged to Google Sheets."
     });
   } catch (error) {

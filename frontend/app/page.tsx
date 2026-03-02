@@ -27,6 +27,8 @@ export default function HomePage() {
   const [resumePath, setResumePath] = useState("");
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [templateFileName, setTemplateFileName] = useState("");
+  const [templateBase64, setTemplateBase64] = useState("");
 
   const apiPayload = {
     job_description: jobDescription,
@@ -75,6 +77,10 @@ export default function HomePage() {
       setStatus("Paste a JD first.");
       return;
     }
+    if (!templateBase64) {
+      setStatus("Upload your base resume DOCX first.");
+      return;
+    }
     try {
       setIsBusy(true);
       const payload = await postJSON<{
@@ -86,13 +92,31 @@ export default function HomePage() {
           contract_alignment_note: string;
         };
         output_path: string;
+        docx_base64: string;
+        file_name: string;
         sheet_status: string;
       }>("/api/tailor-resume", {
         ...apiPayload,
-        replacement_mode: replacementMode
+        replacement_mode: replacementMode,
+        template_docx_base64: templateBase64,
+        template_file_name: templateFileName || "Mehar_Lahari_Resume_DE.docx"
       });
       setParsed(payload.parsed);
       setResumePath(payload.output_path);
+      if (payload.docx_base64) {
+        const bytes = Uint8Array.from(atob(payload.docx_base64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = payload.file_name || "tailored-resume.docx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
       setStatus(`Resume generated. ${payload.sheet_status}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Tailor request failed.");
@@ -132,6 +156,27 @@ export default function HomePage() {
           placeholder="Paste LinkedIn, email, or portal JD here..."
           rows={14}
         />
+
+        <div className="row">
+          <label htmlFor="resume-template">Resume Template (.docx)</label>
+          <input
+            id="resume-template"
+            type="file"
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setTemplateFileName(file.name);
+              const reader = new FileReader();
+              reader.onload = () => {
+                const result = String(reader.result || "");
+                const base64 = result.includes(",") ? result.split(",")[1] : result;
+                setTemplateBase64(base64);
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
+        </div>
 
         <div className="row">
           <label htmlFor="mode">Replacement Mode</label>
