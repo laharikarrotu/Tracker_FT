@@ -192,13 +192,60 @@ function anthropicClient() {
   return new Anthropic({ apiKey });
 }
 
-async function callAnthropicWithFallback(prompt: string): Promise<string> {
-  const client = anthropicClient();
-  const configured = (process.env.ANTHROPIC_MODEL || "").trim();
-  const models = [configured, "claude-3-7-sonnet-latest", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"].filter(
-    Boolean
-  );
-  return callAnthropicWithPolicy(client, prompt, models, 2);
+let discoveredModelIdsCache: { atMs: number; ids: string[] } | null = null;
+
+async function discoverAvailableModelIds(client: Anthropic): Promise<string[]> {
+  const now = Date.now();
+  if (discoveredModelIdsCache && now - discoveredModelIdsCache.atMs < 10 * 60 * 1000) {
+    return discoveredModelIdsCache.ids;
+  }
+  try {
+    // SDK typing may vary by version; keep this resilient.
+    const modelsApi = (client as unknown as { models?: { list: () => Promise<unknown> } }).models;
+    if (!modelsApi?.list) return [];
+    const listResponse = (await modelsApi.list()) as {
+      data?: Array<{ id?: string }>;
+      models?: Array<{ id?: string }>;
+    };
+    const items = listResponse.data || listResponse.models || [];
+    const ids = items
+      .map((m) => (m.id || "").trim())
+      .filter((id) => id.toLowerCase().startsWith("claude-"));
+    discoveredModelIdsCache = { atMs: now, ids };
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+function prioritizeModels(
+  discoveredIds: string[],
+  preferredConfigured: string,
+  family: "sonnet" | "haiku"
+): string[] {
+  const preferred = preferredConfigured.trim();
+  const discoveredFamily = discoveredIds.filter((id) => id.toLowerCase().includes(family));
+  const discoveredOther = discoveredIds.filter((id) => !id.toLowerCase().includes(family));
+
+  // Stable, known candidates as fallback when model listing is unavailable.
+  const defaults =
+    family === "sonnet"
+      ? ["claude-3-7-sonnet-latest", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"]
+      : ["claude-3-haiku-20240307", "claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"];
+
+  const ordered = [preferred, ...discoveredFamily, ...discoveredOther, ...defaults]
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  // De-duplicate while preserving order.
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const id of ordered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(id);
+  }
+  return unique;
 }
 
 async function callAnthropicWithPolicy(
@@ -251,9 +298,8 @@ export async function generateTailoredContent(
 ): Promise<TailoredContent> {
   const client = anthropicClient();
   const preferred = (process.env.ANTHROPIC_TAILOR_MODEL || "").trim();
-  const models = [preferred, "claude-3-7-sonnet-latest", "claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"].filter(
-    Boolean
-  );
+  const discovered = await discoverAvailableModelIds(client);
+  const models = prioritizeModels(discovered, preferred, "sonnet");
   const prompt = `
 You are an expert C2C consulting resume writer for Data Engineer roles.
 Return ONLY JSON:
@@ -305,9 +351,8 @@ Parsed fields:
 export async function generateSubmissionEmail(parsed: ParsedJD): Promise<string> {
   const client = anthropicClient();
   const preferred = (process.env.ANTHROPIC_EMAIL_MODEL || "").trim();
-  const models = [preferred, "claude-3-haiku-20240307", "claude-3-5-sonnet-20241022", "claude-3-7-sonnet-latest"].filter(
-    Boolean
-  );
+  const discovered = await discoverAvailableModelIds(client);
+  const models = prioritizeModels(discovered, preferred, "haiku");
   const prompt = `
 Write a concise, professional C2C submission email for a Data Engineer role.
 Return plain text only, under 180 words.
