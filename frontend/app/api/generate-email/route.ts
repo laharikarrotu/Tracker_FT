@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { applyOverrides, generateSubmissionEmail, parseJobDescription } from "@/lib/server-utils";
+import { applyOverrides, enrichParsedJDWithClaude, generateSubmissionEmail, parseJobDescription } from "@/lib/server-utils";
 
 type Body = {
   job_description: string;
@@ -15,7 +15,8 @@ export async function POST(req: NextRequest) {
     if (!body.job_description?.trim()) {
       return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
     }
-    const parsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const baseParsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const parsed = await enrichParsedJDWithClaude(body.job_description, baseParsed);
     const email_template = await generateSubmissionEmail(parsed);
     return NextResponse.json({ email_template });
   } catch (error) {

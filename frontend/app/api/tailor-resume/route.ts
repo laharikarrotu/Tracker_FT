@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   appendToGoogleSheet,
   applyOverrides,
+  enrichParsedJDWithClaude,
   generateTailoredDocxFromTemplate,
   generateTailoredContent,
   parseJobDescription
@@ -32,7 +33,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const parsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const baseParsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const parsed = await enrichParsedJDWithClaude(body.job_description, baseParsed);
 
     // Single tailored mode: consistent edits while preserving resume structure.
     const summaryCount = 2;

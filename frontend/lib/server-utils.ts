@@ -29,6 +29,21 @@ export type TailoredContent = {
   contract_alignment_note: string;
 };
 
+type ClaudeExtraction = {
+  title?: string;
+  company_or_vendor?: string;
+  recruiter_name?: string;
+  vendor_email?: string;
+  location?: string;
+  contract_type?: string;
+  remote_mode?: string;
+  pay_rate?: string;
+  job_id_url?: string;
+  skills?: string[];
+  role_track?: string;
+  required_terms?: string[];
+};
+
 type DocxOptions = {
   maxSummaryReplacements: number;
   maxExperienceReplacements: number;
@@ -173,6 +188,33 @@ function parseYearsRequired(rawJD: string): number {
   return Math.max(...matches.map((m) => Number(m[1] || 0)));
 }
 
+function computeFitScore(input: {
+  title: string;
+  rawJD: string;
+  skills: string[];
+  required_terms: string[];
+  role_track: string;
+  is_contract_like: boolean;
+}): number {
+  const lower = input.rawJD.toLowerCase();
+  const years_required = parseYearsRequired(input.rawJD);
+  let fit_score = 0;
+  const roleAlignment = lower.includes("data engineer") || lower.includes("data engineering") ? 30 : 10;
+  fit_score += roleAlignment;
+
+  const requiredCoverageBase = input.required_terms.length ? input.required_terms : input.skills;
+  const coveredRequired = requiredCoverageBase.filter((s) => BASELINE_CANDIDATE_SKILLS.has(s)).length;
+  const requiredCoverageScore = requiredCoverageBase.length
+    ? Math.round((coveredRequired / requiredCoverageBase.length) * 45)
+    : Math.min(input.skills.length * 4, 30);
+  fit_score += requiredCoverageScore;
+
+  if (input.role_track !== "general") fit_score += 10;
+  if (input.is_contract_like) fit_score += 10;
+  if (years_required > 0 && years_required <= 10) fit_score += 5;
+  return Math.max(1, Math.min(fit_score, 100));
+}
+
 export function parseJobDescription(rawJD: string): ParsedJD {
   const lines = rawJD.split("\n").map((x) => x.trim()).filter(Boolean);
   const defaultTitle = lines[0]?.slice(0, 120) ?? "Data Engineer";
@@ -206,21 +248,14 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     (lower.includes("onsite") && "Onsite") ||
     "";
 
-  let fit_score = 0;
-  const roleAlignment = lower.includes("data engineer") || lower.includes("data engineering") ? 30 : 10;
-  fit_score += roleAlignment;
-
-  const requiredCoverageBase = required_terms.length ? required_terms : skills;
-  const coveredRequired = requiredCoverageBase.filter((s) => BASELINE_CANDIDATE_SKILLS.has(s)).length;
-  const requiredCoverageScore = requiredCoverageBase.length
-    ? Math.round((coveredRequired / requiredCoverageBase.length) * 45)
-    : Math.min(skills.length * 4, 30);
-  fit_score += requiredCoverageScore;
-
-  if (role_track !== "general") fit_score += 10;
-  if (is_contract_like) fit_score += 10;
-  if (years_required > 0 && years_required <= 10) fit_score += 5;
-  fit_score = Math.max(1, Math.min(fit_score, 100));
+  const fit_score = computeFitScore({
+    title,
+    rawJD,
+    skills,
+    required_terms,
+    role_track,
+    is_contract_like
+  });
 
   return {
     raw_jd: rawJD,
@@ -459,6 +494,101 @@ Contract type: ${parsed.contract_type}
 Skills: ${parsed.skills.join(", ")}
 `;
   return callAnthropicWithPolicy(client, prompt, models, 2);
+}
+
+function parseClaudeExtraction(text: string): ClaudeExtraction {
+  const data = extractJSON(text) as Record<string, unknown>;
+  const arr = (v: unknown) => (Array.isArray(v) ? v.map((x) => safeText(String(x))).filter(Boolean) : []);
+  const str = (v: unknown) => safeText(String(v ?? ""));
+  return {
+    title: str(data.title),
+    company_or_vendor: str(data.company_or_vendor),
+    recruiter_name: str(data.recruiter_name),
+    vendor_email: str(data.vendor_email),
+    location: str(data.location),
+    contract_type: str(data.contract_type),
+    remote_mode: str(data.remote_mode),
+    pay_rate: str(data.pay_rate),
+    job_id_url: str(data.job_id_url),
+    skills: arr(data.skills),
+    role_track: str(data.role_track),
+    required_terms: arr(data.required_terms)
+  };
+}
+
+export async function enrichParsedJDWithClaude(rawJD: string, baseline: ParsedJD): Promise<ParsedJD> {
+  const enabled = (process.env.CLAUDE_EXTRACTION_ENABLED ?? "true").toLowerCase() === "true";
+  if (!enabled) return baseline;
+
+  const client = anthropicClient();
+  const preferred = (process.env.ANTHROPIC_EXTRACTION_MODEL || "").trim();
+  const discovered = await discoverAvailableModelIds(client);
+  const models = prioritizeModels(discovered, preferred, "haiku");
+
+  const prompt = `
+Extract job-description fields as strict JSON. Do not invent data.
+If missing, return empty string "" or [].
+
+Schema:
+{
+  "title": "",
+  "company_or_vendor": "",
+  "recruiter_name": "",
+  "vendor_email": "",
+  "location": "",
+  "contract_type": "",
+  "remote_mode": "",
+  "pay_rate": "",
+  "job_id_url": "",
+  "skills": [],
+  "role_track": "",
+  "required_terms": []
+}
+
+role_track should be one of:
+general, salesforce, azure, aws, gcp, databricks, snowflake
+
+JD:
+${rawJD}
+`;
+
+  try {
+    const text = await callAnthropicWithPolicy(client, prompt, models, 2);
+    const extracted = parseClaudeExtraction(text);
+    const mergeList = (a: string[], b?: string[]) => Array.from(new Set([...(a || []), ...((b || []).filter(Boolean))]));
+    const merged: ParsedJD = {
+      ...baseline,
+      title: extracted.title || baseline.title,
+      company_or_vendor: extracted.company_or_vendor || baseline.company_or_vendor,
+      recruiter_name: extracted.recruiter_name || baseline.recruiter_name,
+      vendor_email: extracted.vendor_email || baseline.vendor_email,
+      location: extracted.location || baseline.location,
+      contract_type: extracted.contract_type || baseline.contract_type,
+      remote_mode: extracted.remote_mode || baseline.remote_mode,
+      pay_rate: extracted.pay_rate || baseline.pay_rate,
+      job_id_url: extracted.job_id_url || baseline.job_id_url,
+      skills: mergeList(baseline.skills, extracted.skills),
+      role_track: extracted.role_track || baseline.role_track,
+      required_terms: mergeList(baseline.required_terms, extracted.required_terms),
+      notes: baseline.notes,
+      is_contract_like:
+        baseline.is_contract_like ||
+        /contract|c2c|w2|1099/i.test(extracted.contract_type || "") ||
+        /contract|c2c|w2|1099/i.test(rawJD),
+      fit_score: baseline.fit_score
+    };
+    merged.fit_score = computeFitScore({
+      title: merged.title,
+      rawJD,
+      skills: merged.skills,
+      required_terms: merged.required_terms,
+      role_track: merged.role_track,
+      is_contract_like: merged.is_contract_like
+    });
+    return merged;
+  } catch {
+    return baseline;
+  }
 }
 
 function xmlEscape(value: string): string {

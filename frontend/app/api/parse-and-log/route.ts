@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appendToGoogleSheet, applyOverrides, parseJobDescription } from "@/lib/server-utils";
+import { appendToGoogleSheet, applyOverrides, enrichParsedJDWithClaude, parseJobDescription } from "@/lib/server-utils";
 
 type Body = {
   job_description: string;
@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
     }
 
-    const parsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const baseParsed = applyOverrides(parseJobDescription(body.job_description), body);
+    const parsed = await enrichParsedJDWithClaude(body.job_description, baseParsed);
     await appendToGoogleSheet({ parsed, status: "Not Applied Yet" });
 
     return NextResponse.json({
