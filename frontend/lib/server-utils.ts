@@ -277,6 +277,27 @@ export function parseJobDescription(rawJD: string): ParsedJD {
   };
 }
 
+export function createEmptyParsedJD(rawJD: string): ParsedJD {
+  return {
+    raw_jd: rawJD,
+    title: "",
+    company_or_vendor: "",
+    recruiter_name: "",
+    vendor_email: "",
+    location: "",
+    contract_type: "",
+    remote_mode: "",
+    pay_rate: "",
+    job_id_url: "",
+    skills: [],
+    role_track: "general",
+    required_terms: [],
+    notes: "Needs manual review",
+    is_contract_like: /contract|c2c|w2|1099/i.test(rawJD),
+    fit_score: 1
+  };
+}
+
 export function applyOverrides(
   parsed: ParsedJD,
   overrides: {
@@ -519,6 +540,7 @@ function parseClaudeExtraction(text: string): ClaudeExtraction {
 export async function enrichParsedJDWithClaude(rawJD: string, baseline: ParsedJD): Promise<ParsedJD> {
   const enabled = (process.env.CLAUDE_EXTRACTION_ENABLED ?? "true").toLowerCase() === "true";
   if (!enabled) return baseline;
+  const extractionOnly = (process.env.CLAUDE_EXTRACTION_ONLY ?? "true").toLowerCase() === "true";
 
   const client = anthropicClient();
   const preferred = (process.env.ANTHROPIC_EXTRACTION_MODEL || "").trim();
@@ -547,6 +569,13 @@ Schema:
 
 role_track should be one of:
 general, salesforce, azure, aws, gcp, databricks, snowflake
+
+Extraction rules:
+- Use exact recruiter/vendor names from text when present.
+- Extract skills/tools/frameworks explicitly mentioned.
+- Include platform variants (e.g., Google Cloud Platform => gcp).
+- Populate required_terms with must-have/top-skill terms.
+- Keep output concise and schema-compliant.
 
 JD:
 ${rawJD}
@@ -586,7 +615,11 @@ ${rawJD}
       is_contract_like: merged.is_contract_like
     });
     return merged;
-  } catch {
+  } catch (error) {
+    if (extractionOnly) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Claude extraction failed: ${msg}`);
+    }
     return baseline;
   }
 }
