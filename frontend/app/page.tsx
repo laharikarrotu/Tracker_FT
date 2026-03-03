@@ -25,6 +25,7 @@ export default function HomePage() {
   const [jobDescription, setJobDescription] = useState("");
   const [status, setStatus] = useState("Ready");
   const [emailTemplate, setEmailTemplate] = useState("");
+  const [coverLetter, setCoverLetter] = useState("");
   const [resumePath, setResumePath] = useState("");
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -134,6 +135,23 @@ export default function HomePage() {
     }
   };
 
+  const onGenerateCoverLetter = async () => {
+    if (!jobDescription.trim()) {
+      setStatus("Paste a JD first.");
+      return;
+    }
+    try {
+      setIsBusy(true);
+      const payload = await postJSON<{ cover_letter: string }>("/api/generate-cover-letter", apiPayload);
+      setCoverLetter(payload.cover_letter);
+      setStatus("Cover letter generated.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Cover letter generation failed.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   return (
     <main className="container">
       <h1>Resume Tailor Frontend</h1>
@@ -162,6 +180,9 @@ export default function HomePage() {
           </button>
           <button type="button" onClick={onGenerateEmail} disabled={isBusy}>
             Generate Email
+          </button>
+          <button type="button" onClick={onGenerateCoverLetter} disabled={isBusy}>
+            Generate Cover Letter
           </button>
         </div>
       </form>
@@ -197,6 +218,8 @@ export default function HomePage() {
           <p><strong>Resume Output:</strong> {resumePath || "Not generated yet"}</p>
           <label htmlFor="email-template">Submission Email Template</label>
           <textarea id="email-template" value={emailTemplate} readOnly rows={12} />
+          <label htmlFor="cover-letter">Cover Letter</label>
+          <textarea id="cover-letter" value={coverLetter} readOnly rows={16} />
         </div>
       </section>
 

@@ -4,6 +4,7 @@ import {
   applyOverrides,
   createEmptyParsedJD,
   enrichParsedJDWithClaude,
+  getTemplateBulletCounts,
   generateTailoredDocxFromTemplate,
   generateTailoredContent,
 } from "@/lib/server-utils";
@@ -37,15 +38,19 @@ export async function POST(req: NextRequest) {
     const extracted = await enrichParsedJDWithClaude(body.job_description, baseParsed);
     const parsed = applyOverrides(extracted, body);
 
-    // Single tailored mode: consistent edits while preserving resume structure.
-    const summaryCount = 2;
-    const experienceCount = 6;
+    // Enforce exact bullet counts from the uploaded/base template.
+    const counts = await getTemplateBulletCounts(templateDocxBase64);
+    const summaryCount = counts.summaryCount;
+    const experienceCount = counts.experienceCount;
 
     const tailored = await generateTailoredContent(parsed, summaryCount, experienceCount);
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
     const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
 
-    const replacementCaps = { maxSummaryReplacements: 2, maxExperienceReplacements: 6 };
+    const replacementCaps = {
+      maxSummaryReplacements: summaryCount,
+      maxExperienceReplacements: experienceCount
+    };
 
     const docx_base64 = await generateTailoredDocxFromTemplate(
       templateDocxBase64,

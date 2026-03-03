@@ -49,6 +49,11 @@ type DocxOptions = {
   maxExperienceReplacements: number;
 };
 
+export type TemplateBulletCounts = {
+  summaryCount: number;
+  experienceCount: number;
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function shouldRetryAnthropicError(message: string): boolean {
@@ -508,9 +513,16 @@ export async function generateSubmissionEmail(parsed: ParsedJD): Promise<string>
   const discovered = await discoverAvailableModelIds(client);
   const models = prioritizeModels(discovered, preferred, "haiku");
   const prompt = `
-Write a concise, professional C2C submission email for a Data Engineer role.
-Return plain text only, under 180 words.
-Include Subject line, greeting, 3-5 match highlights, contract-friendly note, and closing.
+Write a concise senior-level submission email for a Data Engineer role.
+Return plain text only, under 140 words.
+Tone: executive, professional, confident, concise.
+Do not over-explain. Avoid generic filler.
+Format:
+1) Subject line starting with "Subject:"
+2) Greeting
+3) 3 short high-impact fit bullets (single-line each)
+4) One short closing paragraph
+5) Signature line "Regards," and candidate name.
 
 Role: ${parsed.title}
 Company/Vendor: ${parsed.company_or_vendor}
@@ -519,6 +531,40 @@ Contract type: ${parsed.contract_type}
 Skills: ${parsed.skills.join(", ")}
 `;
   return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 450, temperature: 0.2 });
+}
+
+export async function generateCoverLetter(parsed: ParsedJD): Promise<string> {
+  const client = anthropicClient();
+  const preferred = (process.env.ANTHROPIC_EMAIL_MODEL || "").trim();
+  const discovered = await discoverAvailableModelIds(client);
+  const models = prioritizeModels(discovered, preferred, "haiku");
+  const prompt = `
+Write a professional one-page cover letter tailored to this company/role.
+
+Hard requirements:
+- Plain text only.
+- Keep to one page max (roughly 280-420 words).
+- Senior tone: strategic, outcome-focused, confident.
+- Specific to company/role context available below.
+- No placeholders like [Company Name]; use best available extracted values.
+- Keep details factual and aligned with job context.
+
+Structure:
+1) Date line
+2) Hiring Team greeting
+3) Strong opening tailored to role/company
+4) 2 short body paragraphs on technical fit and business impact
+5) Short closing with availability and signature
+
+Role: ${parsed.title}
+Company/Vendor: ${parsed.company_or_vendor}
+Location: ${parsed.location}
+Contract type: ${parsed.contract_type}
+Role track: ${parsed.role_track}
+Required terms: ${parsed.required_terms.join(", ")}
+Skills: ${parsed.skills.join(", ")}
+`;
+  return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 900, temperature: 0.25 });
 }
 
 function parseClaudeExtraction(text: string): ClaudeExtraction {
@@ -711,7 +757,9 @@ export async function generateTailoredDocxFromTemplate(
     const count = Math.min(options.maxSummaryReplacements, summaryBullets.length, tailored.summary_points.length);
     for (let i = 0; i < count; i += 1) {
       const idx = summaryBullets[i];
-      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], tailored.summary_points[i]));
+      const line = safeText(tailored.summary_points[i] || "");
+      if (!line) continue;
+      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], line));
     }
   }
 
@@ -728,7 +776,9 @@ export async function generateTailoredDocxFromTemplate(
     );
     for (let i = 0; i < count; i += 1) {
       const idx = expBullets[i];
-      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], tailored.experience_points[i]));
+      const line = safeText(tailored.experience_points[i] || "");
+      if (!line) continue;
+      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], line));
     }
   }
 
@@ -758,6 +808,46 @@ export async function generateTailoredDocxFromTemplate(
   zip.file("word/document.xml", built);
   const outBuffer = await zip.generateAsync({ type: "nodebuffer" });
   return outBuffer.toString("base64");
+}
+
+export async function getTemplateBulletCounts(templateDocxBase64: string): Promise<TemplateBulletCounts> {
+  const cleaned = templateDocxBase64.replace(/^data:.*;base64,/, "");
+  const zip = await JSZip.loadAsync(Buffer.from(cleaned, "base64"));
+  const file = zip.file("word/document.xml");
+  if (!file) throw new Error("Invalid DOCX template: word/document.xml not found.");
+
+  const xml = await file.async("text");
+  const paragraphRegex = /<w:p[\s\S]*?<\/w:p>/g;
+  const paragraphs = Array.from(xml.matchAll(paragraphRegex)).map((m) => m[0]);
+  if (paragraphs.length === 0) throw new Error("Invalid DOCX template: no paragraphs found.");
+
+  const summaryHeader = findHeaderIndex(paragraphs, ["summary", "professional summary", "profile"]);
+  const experienceHeader = findHeaderIndex(paragraphs, ["experience", "professional experience", "work experience"]);
+  const skillsHeader = findHeaderIndex(paragraphs, ["skills", "technical skills", "core skills"]);
+
+  const summaryEnd = [experienceHeader, skillsHeader, paragraphs.length].filter((x) => x > summaryHeader).sort((a, b) => a - b)[0];
+  const expEnd = [skillsHeader, paragraphs.length].filter((x) => x > experienceHeader).sort((a, b) => a - b)[0];
+
+  let summaryCount = 0;
+  if (summaryHeader >= 0 && summaryEnd > summaryHeader) {
+    for (let i = summaryHeader + 1; i < summaryEnd; i += 1) {
+      const txt = paragraphText(paragraphs[i]);
+      if (txt && isBulletParagraph(paragraphs[i], txt)) summaryCount += 1;
+    }
+  }
+
+  let experienceCount = 0;
+  if (experienceHeader >= 0 && expEnd > experienceHeader) {
+    for (let i = experienceHeader + 1; i < expEnd; i += 1) {
+      const txt = paragraphText(paragraphs[i]);
+      if (txt && isBulletParagraph(paragraphs[i], txt)) experienceCount += 1;
+    }
+  }
+
+  return {
+    summaryCount: Math.max(summaryCount, 1),
+    experienceCount: Math.max(experienceCount, 1)
+  };
 }
 
 export async function appendToGoogleSheet(args: {
