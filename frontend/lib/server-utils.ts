@@ -400,8 +400,11 @@ async function callAnthropicWithPolicy(
   client: Anthropic,
   prompt: string,
   models: string[],
-  maxRetries: number
+  maxRetries: number,
+  options?: { maxTokens?: number; temperature?: number }
 ): Promise<string> {
+  const maxTokens = options?.maxTokens ?? 1200;
+  const temperature = options?.temperature ?? 0.3;
 
   let lastError: unknown = null;
   for (const model of models) {
@@ -409,8 +412,8 @@ async function callAnthropicWithPolicy(
       try {
         const response = await client.messages.create({
           model,
-          max_tokens: 1200,
-          temperature: 0.3,
+          max_tokens: maxTokens,
+          temperature,
           messages: [{ role: "user", content: prompt }]
         });
         return response.content
@@ -426,7 +429,8 @@ async function callAnthropicWithPolicy(
           break;
         }
         if (attempt < maxRetries && shouldRetryAnthropicError(msg)) {
-          await sleep(600 * attempt);
+          // Exponential-ish backoff to survive temporary model overload.
+          await sleep(900 * attempt * attempt);
           continue;
         }
         // For non-retryable errors (auth, malformed input), fail fast.
@@ -479,7 +483,7 @@ Parsed fields:
 - fit_score: ${parsed.fit_score}
 `;
 
-  const text = await callAnthropicWithPolicy(client, prompt, models, 2);
+  const text = await callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 1400, temperature: 0.3 });
   const data = extractJSON(text);
 
   const summary_points = Array.isArray(data.summary_points)
@@ -514,7 +518,7 @@ Location: ${parsed.location}
 Contract type: ${parsed.contract_type}
 Skills: ${parsed.skills.join(", ")}
 `;
-  return callAnthropicWithPolicy(client, prompt, models, 2);
+  return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 450, temperature: 0.2 });
 }
 
 function parseClaudeExtraction(text: string): ClaudeExtraction {
@@ -582,7 +586,7 @@ ${rawJD}
 `;
 
   try {
-    const text = await callAnthropicWithPolicy(client, prompt, models, 2);
+    const text = await callAnthropicWithPolicy(client, prompt, models, 4, { maxTokens: 700, temperature: 0.1 });
     const extracted = parseClaudeExtraction(text);
     const mergeList = (a: string[], b?: string[]) => Array.from(new Set([...(a || []), ...((b || []).filter(Boolean))]));
     const merged: ParsedJD = {
