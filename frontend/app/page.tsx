@@ -13,6 +13,8 @@ type ParsedJD = {
   pay_rate?: string;
   job_id_url?: string;
   skills: string[];
+  role_track?: string;
+  required_terms?: string[];
   fit_score?: number;
   is_contract_like?: boolean;
 };
@@ -179,6 +181,8 @@ export default function HomePage() {
               <li><strong>Pay Rate:</strong> {parsed.pay_rate || "Not specified"}</li>
               <li><strong>Job URL/ID:</strong> {parsed.job_id_url || "Not specified"}</li>
               <li><strong>Skills:</strong> {parsed.skills.join(", ") || "No skills detected yet"}</li>
+              <li><strong>Role Track:</strong> {parsed.role_track || "general"}</li>
+              <li><strong>Required Terms:</strong> {(parsed.required_terms || []).join(", ") || "Not detected"}</li>
               <li><strong>Fit Score:</strong> {parsed.fit_score ?? "N/A"}</li>
               <li><strong>Contract-like:</strong> {String(parsed.is_contract_like ?? false)}</li>
             </ul>

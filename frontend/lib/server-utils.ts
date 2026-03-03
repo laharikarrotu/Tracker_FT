@@ -14,6 +14,8 @@ export type ParsedJD = {
   pay_rate: string;
   job_id_url: string;
   skills: string[];
+  role_track: string;
+  required_terms: string[];
   notes: string;
   is_contract_like: boolean;
   fit_score: number;
@@ -58,7 +60,7 @@ function shouldRetryGoogleError(message: string): boolean {
 }
 
 const CONTRACT_TERMS = ["contract", "c2c", "corp-to-corp", "w2", "1099", "contractor", "vendor"];
-const DATA_ENGINEER_SKILLS = [
+const BASELINE_CANDIDATE_SKILLS = new Set([
   "python",
   "pyspark",
   "spark",
@@ -71,11 +73,44 @@ const DATA_ENGINEER_SKILLS = [
   "azure",
   "gcp",
   "etl",
-  "data pipeline",
   "kafka",
   "redshift",
-  "bigquery"
+  "bigquery",
+  "data modeling",
+  "data warehousing"
+]);
+const SKILL_PATTERNS: Array<{ canonical: string; pattern: RegExp }> = [
+  { canonical: "python", pattern: /\bpython\b/i },
+  { canonical: "pyspark", pattern: /\bpyspark\b/i },
+  { canonical: "spark", pattern: /\bspark\b/i },
+  { canonical: "sql", pattern: /\bsql\b/i },
+  { canonical: "snowflake", pattern: /\bsnowflake\b/i },
+  { canonical: "airflow", pattern: /\bairflow\b/i },
+  { canonical: "dbt", pattern: /\bdbt\b/i },
+  { canonical: "databricks", pattern: /\bdatabricks\b/i },
+  { canonical: "aws", pattern: /\baws\b|amazon web services/i },
+  { canonical: "azure", pattern: /\bazure\b/i },
+  { canonical: "gcp", pattern: /\bgcp\b|google cloud platform/i },
+  { canonical: "etl", pattern: /\betl\b|extract[\s-]?transform[\s-]?load/i },
+  { canonical: "kafka", pattern: /\bkafka\b/i },
+  { canonical: "redshift", pattern: /\bredshift\b/i },
+  { canonical: "bigquery", pattern: /\bbigquery\b/i },
+  { canonical: "teradata", pattern: /\bteradata\b/i },
+  { canonical: "tableau", pattern: /\btableau\b/i },
+  { canonical: "power bi", pattern: /\bpower\s*bi\b/i },
+  { canonical: "sap business objects", pattern: /\bsap\s*business\s*object/i },
+  { canonical: "salesforce", pattern: /\bsalesforce\b/i },
+  { canonical: "data modeling", pattern: /\bdata model/i },
+  { canonical: "data warehousing", pattern: /\bdata warehous/i }
 ];
+const ROLE_TRACK_HINTS: Record<string, string[]> = {
+  salesforce: ["salesforce", "crm", "apex", "soql"],
+  azure: ["azure", "adf", "synapse", "azure databricks"],
+  aws: ["aws", "glue", "redshift", "emr", "s3"],
+  gcp: ["gcp", "bigquery", "dataflow", "pubsub"],
+  databricks: ["databricks", "delta lake", "spark"],
+  snowflake: ["snowflake"]
+};
 
 function firstMatch(pattern: RegExp, value: string): string {
   const match = value.match(pattern);
@@ -94,6 +129,48 @@ function firstURL(value: string): string {
 
 function safeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function extractSkills(rawJD: string): string[] {
+  const found: string[] = [];
+  for (const item of SKILL_PATTERNS) {
+    if (item.pattern.test(rawJD)) found.push(item.canonical);
+  }
+  return Array.from(new Set(found)).sort();
+}
+
+function inferRoleTrack(title: string, rawJD: string): string {
+  const text = `${title}\n${rawJD}`.toLowerCase();
+  let best = "general";
+  let bestScore = 0;
+  for (const [track, hints] of Object.entries(ROLE_TRACK_HINTS)) {
+    const score = hints.reduce((acc, h) => (text.includes(h) ? acc + 1 : acc), 0);
+    if (score > bestScore) {
+      best = track;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function extractRequiredTerms(rawJD: string): string[] {
+  const lines = rawJD.split("\n").map((x) => x.trim()).filter(Boolean);
+  const requiredLines = lines.filter((line) =>
+    /required|must have|key responsibilities|required qualifications|experience in|top skills/i.test(line)
+  );
+  const terms = new Set<string>();
+  for (const line of requiredLines) {
+    for (const item of SKILL_PATTERNS) {
+      if (item.pattern.test(line)) terms.add(item.canonical);
+    }
+  }
+  return Array.from(terms);
+}
+
+function parseYearsRequired(rawJD: string): number {
+  const matches = Array.from(rawJD.matchAll(/(\d+)\s*\+?\s*years?/gi));
+  if (!matches.length) return 0;
+  return Math.max(...matches.map((m) => Number(m[1] || 0)));
 }
 
 export function parseJobDescription(rawJD: string): ParsedJD {
@@ -118,8 +195,11 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     rawJD
   ) || firstMatch(/(\$\s*\d+[kK]?(?:\s*[-to]+\s*\$?\s*\d+[kK]?)?)/i, rawJD);
   const lower = rawJD.toLowerCase();
-  const skills = DATA_ENGINEER_SKILLS.filter((skill) => lower.includes(skill)).sort();
+  const skills = extractSkills(rawJD);
   const is_contract_like = CONTRACT_TERMS.some((term) => lower.includes(term));
+  const role_track = inferRoleTrack(title, rawJD);
+  const required_terms = extractRequiredTerms(rawJD);
+  const years_required = parseYearsRequired(rawJD);
   const remote_mode =
     (lower.includes("hybrid") && "Hybrid") ||
     (lower.includes("remote") && "Remote") ||
@@ -127,10 +207,20 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     "";
 
   let fit_score = 0;
-  if (lower.includes("data engineer") || lower.includes("data engineering")) fit_score += 40;
-  fit_score += Math.min(skills.length * 6, 36);
-  if (is_contract_like) fit_score += 24;
-  fit_score = Math.min(fit_score, 100);
+  const roleAlignment = lower.includes("data engineer") || lower.includes("data engineering") ? 30 : 10;
+  fit_score += roleAlignment;
+
+  const requiredCoverageBase = required_terms.length ? required_terms : skills;
+  const coveredRequired = requiredCoverageBase.filter((s) => BASELINE_CANDIDATE_SKILLS.has(s)).length;
+  const requiredCoverageScore = requiredCoverageBase.length
+    ? Math.round((coveredRequired / requiredCoverageBase.length) * 45)
+    : Math.min(skills.length * 4, 30);
+  fit_score += requiredCoverageScore;
+
+  if (role_track !== "general") fit_score += 10;
+  if (is_contract_like) fit_score += 10;
+  if (years_required > 0 && years_required <= 10) fit_score += 5;
+  fit_score = Math.max(1, Math.min(fit_score, 100));
 
   return {
     raw_jd: rawJD,
@@ -144,6 +234,8 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     pay_rate: safeText(pay_rate),
     job_id_url: safeText(job_id_url),
     skills,
+    role_track,
+    required_terms,
     notes: is_contract_like ? "Contract-focused fit" : "Needs manual contract check",
     is_contract_like,
     fit_score
@@ -325,6 +417,8 @@ Parsed fields:
 - company_or_vendor: ${parsed.company_or_vendor}
 - location: ${parsed.location}
 - contract_type: ${parsed.contract_type}
+- role_track: ${parsed.role_track}
+- required_terms: ${parsed.required_terms.join(", ")}
 - extracted_skills: ${parsed.skills.join(", ")}
 - fit_score: ${parsed.fit_score}
 `;

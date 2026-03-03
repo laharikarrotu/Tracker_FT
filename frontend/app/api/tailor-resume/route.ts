@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
         pay_rate: parsed.pay_rate,
         job_id_url: parsed.job_id_url,
         skills: parsed.skills,
+        role_track: parsed.role_track,
+        required_terms: parsed.required_terms,
         fit_score: parsed.fit_score,
         is_contract_like: parsed.is_contract_like
       },
