@@ -19,7 +19,13 @@ export async function POST(req: NextRequest) {
     const baseParsed = createEmptyParsedJD(body.job_description);
     const extracted = await enrichParsedJDWithClaude(body.job_description, baseParsed);
     const parsed = applyOverrides(extracted, body);
-    await appendToGoogleSheet({ parsed, status: "Not Applied Yet" });
+    let sheetStatus = "JD logged to Google Sheets.";
+    try {
+      await appendToGoogleSheet({ parsed, status: "Not Applied Yet" });
+    } catch (sheetError) {
+      const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
+      sheetStatus = `JD parsed, but Google Sheets logging failed: ${message}`;
+    }
 
     return NextResponse.json({
       parsed: {
@@ -39,7 +45,7 @@ export async function POST(req: NextRequest) {
         fit_score: parsed.fit_score,
         is_contract_like: parsed.is_contract_like
       },
-      sheet_status: "JD logged to Google Sheets."
+      sheet_status: sheetStatus
     });
   } catch (error) {
     return NextResponse.json(

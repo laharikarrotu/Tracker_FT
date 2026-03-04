@@ -25,12 +25,18 @@ export async function POST(req: NextRequest) {
     const extracted = await enrichParsedJDWithClaude(body.job_description, baseParsed);
     const parsed = applyOverrides(extracted, body);
     const call_intro = await generateCallIntro(parsed);
-    await appendToGoogleSheet({
-      parsed,
-      status: "Call Intro Ready",
-      callIntro: call_intro
-    });
-    return NextResponse.json({ call_intro });
+    let sheet_status = "Call intro logged to Google Sheets.";
+    try {
+      await appendToGoogleSheet({
+        parsed,
+        status: "Call Intro Ready",
+        callIntro: call_intro
+      });
+    } catch (sheetError) {
+      const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
+      sheet_status = `Call intro generated, but Google Sheets logging failed: ${message}`;
+    }
+    return NextResponse.json({ call_intro, sheet_status });
   } catch (error) {
     return NextResponse.json(
       { detail: error instanceof Error ? error.message : "Unexpected error." },

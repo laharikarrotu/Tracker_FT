@@ -1130,7 +1130,7 @@ export async function appendToGoogleSheet(args: {
       const key = normalize(h);
       return key === "quickcallintro" || key === "callintro" || key === "phoneintro" || key === "shortintro";
     });
-    if (isVendorDbTab && !hasCallIntroHeader) {
+    if (callIntro && isVendorDbTab && !hasCallIntroHeader) {
       headers.push("Quick Call Intro");
       const endCol = columnNumberToLetters(headers.length);
       await callWithSheetsRetry(() =>

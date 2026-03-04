@@ -161,9 +161,12 @@ export default function HomePage() {
     }
     try {
       setIsBusy(true);
-      const payload = await postJSON<{ call_intro: string }>("/api/generate-call-intro", apiPayload);
+      const payload = await postJSON<{ call_intro: string; sheet_status?: string }>(
+        "/api/generate-call-intro",
+        apiPayload
+      );
       setCallIntro(payload.call_intro);
-      setStatus("My call self-intro generated.");
+      setStatus(payload.sheet_status || "My call self-intro generated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Call intro generation failed.");
     } finally {

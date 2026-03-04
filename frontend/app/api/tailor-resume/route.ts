@@ -63,12 +63,18 @@ export async function POST(req: NextRequest) {
     );
 
     const output_path = `generated/${Date.now()}-${(body.template_file_name || "tailored").replace(/\s+/g, "_")}`;
-    await appendToGoogleSheet({
-      parsed,
-      status: "Applied",
-      outputPath: output_path,
-      notes: tailored.contract_alignment_note
-    });
+    let sheet_status = "Tailored record logged to Google Sheets.";
+    try {
+      await appendToGoogleSheet({
+        parsed,
+        status: "Applied",
+        outputPath: output_path,
+        notes: tailored.contract_alignment_note
+      });
+    } catch (sheetError) {
+      const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
+      sheet_status = `Resume generated, but Google Sheets logging failed: ${message}`;
+    }
 
     return NextResponse.json({
       parsed: {
@@ -97,7 +103,7 @@ export async function POST(req: NextRequest) {
       output_path,
       docx_base64,
       file_name: `tailored-${(body.template_file_name || "resume").replace(/\s+/g, "_")}`,
-      sheet_status: "Tailored record logged to Google Sheets."
+      sheet_status
     });
   } catch (error) {
     return NextResponse.json(
