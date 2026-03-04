@@ -163,7 +163,7 @@ export default function HomePage() {
       setIsBusy(true);
       const payload = await postJSON<{ call_intro: string }>("/api/generate-call-intro", apiPayload);
       setCallIntro(payload.call_intro);
-      setStatus("Quick call intro generated.");
+      setStatus("My call self-intro generated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Call intro generation failed.");
     } finally {
@@ -204,7 +204,7 @@ export default function HomePage() {
             Generate Cover Letter
           </button>
           <button type="button" onClick={onGenerateCallIntro} disabled={isBusy}>
-            Generate Call Intro
+            Generate My Intro
           </button>
         </div>
       </form>
@@ -243,7 +243,7 @@ export default function HomePage() {
           <textarea id="email-template" value={emailTemplate} readOnly rows={12} />
           <label htmlFor="cover-letter">Cover Letter</label>
           <textarea id="cover-letter" value={coverLetter} readOnly rows={16} />
-          <label htmlFor="call-intro">Quick Call Intro (4-5 lines)</label>
+          <label htmlFor="call-intro">My Call Self-Intro (4-5 lines)</label>
           <textarea id="call-intro" value={callIntro} readOnly rows={6} />
         </div>
       </section>

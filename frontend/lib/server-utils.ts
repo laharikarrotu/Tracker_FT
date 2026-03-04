@@ -602,15 +602,19 @@ export async function generateCallIntro(parsed: ParsedJD): Promise<string> {
   const discovered = await discoverAvailableModelIds(client);
   const models = prioritizeModels(discovered, preferred, "haiku");
   const prompt = `
-Write a short recruiter call intro script in 4-5 lines max.
+Write a short self-introduction script in 4-5 lines max for a candidate answering a recruiter call.
 
 Requirements:
 - Plain text only.
 - Professional but natural spoken tone.
 - No buzzwords or overhype.
+- First-person candidate voice ("Hi, this is Mehar...").
+- Introduce yourself as the applicant, not the recruiter.
 - Mention role fit and top 3 relevant skills from JD context.
-- End with a polite line to continue the conversation.
+- End with a polite line inviting the recruiter to continue.
 - Each line should be easy to read aloud in a call.
+- Do not ask the candidate to submit resume/profile; assume that is already done.
+- Keep it short and confident.
 
 Candidate:
 - Name: Mehar Lahari
