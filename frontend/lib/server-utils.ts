@@ -8,6 +8,7 @@ export type ParsedJD = {
   company_or_vendor: string;
   recruiter_name: string;
   vendor_email: string;
+  vendor_phone: string;
   location: string;
   contract_type: string;
   remote_mode: string;
@@ -34,6 +35,7 @@ type ClaudeExtraction = {
   company_or_vendor?: string;
   recruiter_name?: string;
   vendor_email?: string;
+  vendor_phone?: string;
   location?: string;
   contract_type?: string;
   remote_mode?: string;
@@ -147,6 +149,11 @@ function firstURL(value: string): string {
   return match?.[0]?.trim() ?? "";
 }
 
+function firstPhone(value: string): string {
+  const match = value.match(/(?:\+\d{1,2}\s*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]*\d{4}/);
+  return match?.[0]?.trim() ?? "";
+}
+
 function safeText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -236,6 +243,9 @@ export function parseJobDescription(rawJD: string): ParsedJD {
   const vendor_email = safeText(
     firstMatch(/(?:share suitable profiles to|email)\s*[:\-]?\s*([^\s,\n]+)/i, rawJD) || firstEmail(rawJD)
   );
+  const vendor_phone = safeText(
+    firstMatch(/(?:phone|mobile|contact)\s*[:\-]\s*([^\n\r]+)/i, rawJD) || firstPhone(rawJD)
+  );
   const job_id_url = firstMatch(/(?:job id\s*\/\s*url|job id|requisition id)\s*[:\-]\s*([^\n\r]+)/i, rawJD) || firstURL(rawJD);
   const pay_rate = firstMatch(
     /(?:pay rate|rate|budget)\s*[:\-]\s*([^\n\r]+)/i,
@@ -268,6 +278,7 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     company_or_vendor: safeText(company_or_vendor),
     recruiter_name,
     vendor_email,
+    vendor_phone,
     location: safeText(location),
     contract_type: contract_type || (is_contract_like ? "Contract" : ""),
     remote_mode,
@@ -289,6 +300,7 @@ export function createEmptyParsedJD(rawJD: string): ParsedJD {
     company_or_vendor: "",
     recruiter_name: "",
     vendor_email: "",
+    vendor_phone: "",
     location: "",
     contract_type: "",
     remote_mode: "",
@@ -512,23 +524,40 @@ export async function generateSubmissionEmail(parsed: ParsedJD): Promise<string>
   const preferred = (process.env.ANTHROPIC_EMAIL_MODEL || "").trim();
   const discovered = await discoverAvailableModelIds(client);
   const models = prioritizeModels(discovered, preferred, "haiku");
+  const roleName = parsed.title || "Data Engineer";
+  const companyName = parsed.company_or_vendor || "the team";
+  const recruiterName = parsed.recruiter_name || "Hiring Team";
+  const skillsText = parsed.skills.join(", ") || "data engineering and cloud technologies";
+  const locationText = parsed.location || "Not specified";
   const prompt = `
-Write a concise senior-level submission email for a Data Engineer role.
-Return plain text only, under 140 words.
-Tone: executive, professional, confident, concise.
-Do not over-explain. Avoid generic filler.
-Format:
-1) Subject line starting with "Subject:"
-2) Greeting
-3) 3 short high-impact fit bullets (single-line each)
-4) One short closing paragraph
-5) Signature line "Regards," and candidate name.
+Write a short, natural-sounding job application email from a candidate directly applying or submitting their profile to a vendor/recruiter.
 
-Role: ${parsed.title}
-Company/Vendor: ${parsed.company_or_vendor}
-Location: ${parsed.location}
-Contract type: ${parsed.contract_type}
-Skills: ${parsed.skills.join(", ")}
+Hard rules:
+- Plain text only.
+- No bullet points.
+- Keep it conversational and human, not stiff.
+- Do not use phrases like "I am confident", "immediate impact", or "drive results".
+- Keep the body under 150 words.
+
+Structure:
+1) Subject line exactly in this format:
+   Subject: [Role Name] – Mehar Lahari
+2) Brief friendly opener (1 line).
+3) One short paragraph summarizing relevant experience, naturally weaving in key JD skills.
+4) One short closing line offering to connect and mentioning resume is attached.
+5) Exact signature:
+Thanks,
+Mehar Lahari
+Senior Data Engineer
+meharlahari@gmail.com
++1 601-460-9527
+
+Variables:
+- Job title: ${roleName}
+- Company name: ${companyName}
+- Location: ${locationText}
+- Recruiter/Hiring manager name: ${recruiterName}
+- Key skills from JD: ${skillsText}
 `;
   return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 450, temperature: 0.2 });
 }
@@ -567,6 +596,36 @@ Skills: ${parsed.skills.join(", ")}
   return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 900, temperature: 0.25 });
 }
 
+export async function generateCallIntro(parsed: ParsedJD): Promise<string> {
+  const client = anthropicClient();
+  const preferred = (process.env.ANTHROPIC_EMAIL_MODEL || "").trim();
+  const discovered = await discoverAvailableModelIds(client);
+  const models = prioritizeModels(discovered, preferred, "haiku");
+  const prompt = `
+Write a short recruiter call intro script in 4-5 lines max.
+
+Requirements:
+- Plain text only.
+- Professional but natural spoken tone.
+- No buzzwords or overhype.
+- Mention role fit and top 3 relevant skills from JD context.
+- End with a polite line to continue the conversation.
+- Each line should be easy to read aloud in a call.
+
+Candidate:
+- Name: Mehar Lahari
+- Profile: Senior Data Engineer
+
+Job context:
+- Role: ${parsed.title}
+- Company/Vendor: ${parsed.company_or_vendor}
+- Location: ${parsed.location}
+- Skills: ${parsed.skills.join(", ")}
+- Role track: ${parsed.role_track}
+`;
+  return callAnthropicWithPolicy(client, prompt, models, 2, { maxTokens: 260, temperature: 0.25 });
+}
+
 function parseClaudeExtraction(text: string): ClaudeExtraction {
   const data = extractJSON(text) as Record<string, unknown>;
   const arr = (v: unknown) => (Array.isArray(v) ? v.map((x) => safeText(String(x))).filter(Boolean) : []);
@@ -576,6 +635,7 @@ function parseClaudeExtraction(text: string): ClaudeExtraction {
     company_or_vendor: str(data.company_or_vendor),
     recruiter_name: str(data.recruiter_name),
     vendor_email: str(data.vendor_email),
+    vendor_phone: str(data.vendor_phone),
     location: str(data.location),
     contract_type: str(data.contract_type),
     remote_mode: str(data.remote_mode),
@@ -607,6 +667,7 @@ Schema:
   "company_or_vendor": "",
   "recruiter_name": "",
   "vendor_email": "",
+  "vendor_phone": "",
   "location": "",
   "contract_type": "",
   "remote_mode": "",
@@ -641,6 +702,7 @@ ${rawJD}
       company_or_vendor: extracted.company_or_vendor || baseline.company_or_vendor,
       recruiter_name: extracted.recruiter_name || baseline.recruiter_name,
       vendor_email: extracted.vendor_email || baseline.vendor_email,
+      vendor_phone: extracted.vendor_phone || baseline.vendor_phone,
       location: extracted.location || baseline.location,
       contract_type: extracted.contract_type || baseline.contract_type,
       remote_mode: extracted.remote_mode || baseline.remote_mode,
@@ -690,6 +752,17 @@ function decodeXmlEntities(value: string): string {
     .replace(/&quot;/g, "\"")
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, "&");
+}
+
+function columnNumberToLetters(num: number): string {
+  let n = Math.max(1, num);
+  let out = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
 }
 
 function paragraphText(paragraphXml: string): string {
@@ -855,6 +928,7 @@ export async function appendToGoogleSheet(args: {
   status: string;
   outputPath?: string;
   notes?: string;
+  callIntro?: string;
 }) {
   const sheetId = process.env.GOOGLE_SHEET_ID;
   const sheetTab = process.env.GOOGLE_SHEET_TAB || "Applications";
@@ -890,6 +964,7 @@ export async function appendToGoogleSheet(args: {
   const contractType = args.parsed.contract_type || (args.parsed.is_contract_like ? "C2C/Contract" : "");
   const skillsBrief = args.parsed.skills.join(", ");
   const note = args.notes || args.parsed.notes;
+  const callIntro = args.callIntro || "";
 
   const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const tabNorm = (value: string) => normalize(value).replace(/dashboard|howtouse/g, "");
@@ -922,11 +997,15 @@ export async function appendToGoogleSheet(args: {
       requirements: skillsBrief,
       notes: note,
       generalnotes: note,
+      callintro: callIntro,
+      quickcallintro: callIntro,
+      phoneintro: callIntro,
+      shortintro: callIntro,
       followupdate: "",
       interviewdate: "",
       dayssinceapplied: "",
       vendoremail: args.parsed.vendor_email,
-      vendorphone: "",
+      vendorphone: args.parsed.vendor_phone,
       confirmaton: "",
       confirmation: "",
       interviewcalled: "",
@@ -957,6 +1036,21 @@ export async function appendToGoogleSheet(args: {
     pickTitle("vendordb"),
     pickTitle("submissions")
   ].filter((x): x is string => Boolean(x));
+
+  const callIntroTabName = "Call Intros";
+  if (callIntro) {
+    let callTab = pickTitle("callintro") || pickTitle("callnotes") || pickTitle("quickintro");
+    if (!callTab) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: [{ addSheet: { properties: { title: callIntroTabName } } }]
+        }
+      });
+      callTab = callIntroTabName;
+    }
+    if (!targetTabs.includes(callTab)) targetTabs.push(callTab);
+  }
 
   // Fallback to configured tab if the expected tabs are not found.
   if (targetTabs.length === 0) {
@@ -993,7 +1087,56 @@ export async function appendToGoogleSheet(args: {
     );
     const headers = (headerResp.data.values?.[0] || []).map((x) => String(x).trim());
     if (headers.length === 0) {
+      const isCallIntroTab = tabNorm(tab).includes("callintro") || tabNorm(tab).includes("quickintro");
+      if (!isCallIntroTab) continue;
+      const defaultHeaders = [
+        "Date Applied",
+        "Company Name",
+        "Job Title",
+        "Location",
+        "Vendor Name",
+        "Vendor Email",
+        "Vendor Phone",
+        "Job ID/URL",
+        "Status",
+        "JD Notes",
+        "Quick Call Intro"
+      ];
+      await callWithSheetsRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${tab}!A2:K2`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [defaultHeaders] }
+        })
+      );
+      const row = defaultHeaders.map((h) => headerToValue(h));
+      await callWithSheetsRetry(() =>
+        sheets.spreadsheets.values.append({
+          spreadsheetId: sheetId,
+          range: `${tab}!A:K`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [row] }
+        })
+      );
       continue;
+    }
+    const isVendorDbTab = tabNorm(tab).includes("vendordb");
+    const hasCallIntroHeader = headers.some((h) => {
+      const key = normalize(h);
+      return key === "quickcallintro" || key === "callintro" || key === "phoneintro" || key === "shortintro";
+    });
+    if (isVendorDbTab && !hasCallIntroHeader) {
+      headers.push("Quick Call Intro");
+      const endCol = columnNumberToLetters(headers.length);
+      await callWithSheetsRetry(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: `${tab}!A2:${endCol}2`,
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: [headers] }
+        })
+      );
     }
     const row = headers.map((h) => headerToValue(h));
 

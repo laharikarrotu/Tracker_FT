@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
         company_or_vendor: parsed.company_or_vendor,
         recruiter_name: parsed.recruiter_name,
         vendor_email: parsed.vendor_email,
+        vendor_phone: parsed.vendor_phone,
         location: parsed.location,
         contract_type: parsed.contract_type,
         remote_mode: parsed.remote_mode,
