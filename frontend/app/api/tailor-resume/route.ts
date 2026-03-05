@@ -1,44 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  appendToGoogleSheet,
-  applyOverrides,
-  createEmptyParsedJD,
-  enrichParsedJDWithClaude,
-  getTemplateBulletCounts,
-  generateTailoredDocxFromTemplate,
-  generateTailoredContent,
-} from "@/lib/server-utils";
+import { parseAndEnrichJD, parseRequestBody, parsedSummary, handleRouteError } from "@/lib/api";
+import { appConfig } from "@/lib/config";
+import { getTemplateBulletCounts, generateTailoredDocxFromTemplate } from "@/lib/docx";
+import { generateTailoredContent } from "@/lib/generation";
+import { appendToGoogleSheet } from "@/lib/sheets";
+import { AppError } from "@/lib/common";
 
-type Body = {
-  job_description: string;
-  override_title?: string;
-  override_company?: string;
-  override_location?: string;
-  override_contract?: string;
-  template_docx_base64?: string;
-  template_file_name?: string;
-};
+function safeRoleForFileName(role: string): string {
+  const trimmed = role.trim();
+  if (!trimmed) return "Role";
+  return trimmed.replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ");
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as Body;
-    if (!body.job_description?.trim()) {
-      return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
-    }
-    const serverTemplate = (process.env.BASE_RESUME_DOCX_BASE64 || "").trim();
+    const body = await parseRequestBody(req);
+    const serverTemplate = appConfig.baseResumeDocxBase64;
     const templateDocxBase64 = (body.template_docx_base64 || serverTemplate).trim();
     if (!templateDocxBase64) {
-      return NextResponse.json(
-        { detail: "Missing base resume template. Set BASE_RESUME_DOCX_BASE64 in Vercel." },
-        { status: 400 }
-      );
+      throw new AppError("Missing base resume template. Set BASE_RESUME_DOCX_BASE64 in Vercel.", 400);
     }
+    const parsed = await parseAndEnrichJD(body);
 
-    const baseParsed = createEmptyParsedJD(body.job_description);
-    const extracted = await enrichParsedJDWithClaude(body.job_description, baseParsed);
-    const parsed = applyOverrides(extracted, body);
-
-    // Enforce exact bullet counts from the uploaded/base template.
     const counts = await getTemplateBulletCounts(templateDocxBase64);
     const summaryCount = counts.summaryCount;
     const experienceCount = counts.experienceCount;
@@ -69,7 +52,12 @@ export async function POST(req: NextRequest) {
         parsed,
         status: "Applied",
         outputPath: output_path,
-        notes: tailored.contract_alignment_note
+        notes: tailored.contract_alignment_note,
+        config: {
+          googleSheetId: body.google_sheet_id,
+          googleSheetTab: body.google_sheet_tab,
+          googleServiceAccountJson: body.google_service_account_json,
+        },
       });
     } catch (sheetError) {
       const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
@@ -77,38 +65,19 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      parsed: {
-        title: parsed.title,
-        company_or_vendor: parsed.company_or_vendor,
-        recruiter_name: parsed.recruiter_name,
-        vendor_email: parsed.vendor_email,
-        vendor_phone: parsed.vendor_phone,
-        location: parsed.location,
-        contract_type: parsed.contract_type,
-        remote_mode: parsed.remote_mode,
-        pay_rate: parsed.pay_rate,
-        job_id_url: parsed.job_id_url,
-        skills: parsed.skills,
-        role_track: parsed.role_track,
-        required_terms: parsed.required_terms,
-        fit_score: parsed.fit_score,
-        is_contract_like: parsed.is_contract_like
-      },
+      parsed: parsedSummary(parsed),
       tailored: {
         summary_points,
         experience_points,
         skills_line: tailored.skills_line,
-        contract_alignment_note: tailored.contract_alignment_note
+        contract_alignment_note: tailored.contract_alignment_note,
       },
       output_path,
       docx_base64,
-      file_name: `tailored-${(body.template_file_name || "resume").replace(/\s+/g, "_")}`,
-      sheet_status
+      file_name: `Lahari_Karrotu_(${safeRoleForFileName(parsed.title)}).docx`,
+      sheet_status,
     });
   } catch (error) {
-    return NextResponse.json(
-      { detail: error instanceof Error ? error.message : "Unexpected error." },
-      { status: 500 }
-    );
+    return handleRouteError(error);
   }
 }

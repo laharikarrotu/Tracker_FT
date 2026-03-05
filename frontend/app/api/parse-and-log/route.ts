@@ -1,56 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import { appendToGoogleSheet, applyOverrides, createEmptyParsedJD, enrichParsedJDWithClaude } from "@/lib/server-utils";
-
-type Body = {
-  job_description: string;
-  override_title?: string;
-  override_company?: string;
-  override_location?: string;
-  override_contract?: string;
-};
+import { parseAndEnrichJD, parseRequestBody, parsedSummary, handleRouteError } from "@/lib/api";
+import { appendToGoogleSheet } from "@/lib/sheets";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as Body;
-    if (!body.job_description?.trim()) {
-      return NextResponse.json({ detail: "job_description is required." }, { status: 400 });
-    }
-
-    const baseParsed = createEmptyParsedJD(body.job_description);
-    const extracted = await enrichParsedJDWithClaude(body.job_description, baseParsed);
-    const parsed = applyOverrides(extracted, body);
+    const body = await parseRequestBody(req);
+    const parsed = await parseAndEnrichJD(body);
     let sheetStatus = "JD logged to Google Sheets.";
     try {
-      await appendToGoogleSheet({ parsed, status: "Not Applied Yet" });
+      await appendToGoogleSheet({
+        parsed,
+        status: "Not Applied Yet",
+        config: {
+          googleSheetId: body.google_sheet_id,
+          googleSheetTab: body.google_sheet_tab,
+          googleServiceAccountJson: body.google_service_account_json,
+        },
+      });
     } catch (sheetError) {
       const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
       sheetStatus = `JD parsed, but Google Sheets logging failed: ${message}`;
     }
 
     return NextResponse.json({
-      parsed: {
-        title: parsed.title,
-        company_or_vendor: parsed.company_or_vendor,
-        recruiter_name: parsed.recruiter_name,
-        vendor_email: parsed.vendor_email,
-        vendor_phone: parsed.vendor_phone,
-        location: parsed.location,
-        contract_type: parsed.contract_type,
-        remote_mode: parsed.remote_mode,
-        pay_rate: parsed.pay_rate,
-        job_id_url: parsed.job_id_url,
-        skills: parsed.skills,
-        role_track: parsed.role_track,
-        required_terms: parsed.required_terms,
-        fit_score: parsed.fit_score,
-        is_contract_like: parsed.is_contract_like
-      },
-      sheet_status: sheetStatus
+      parsed: parsedSummary(parsed),
+      sheet_status: sheetStatus,
     });
   } catch (error) {
-    return NextResponse.json(
-      { detail: error instanceof Error ? error.message : "Unexpected error." },
-      { status: 500 }
-    );
+    return handleRouteError(error);
   }
 }

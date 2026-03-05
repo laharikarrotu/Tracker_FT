@@ -31,14 +31,24 @@ export default function HomePage() {
   const [resumePath, setResumePath] = useState("");
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [templateDocxBase64, setTemplateDocxBase64] = useState("");
+  const [templateFileName, setTemplateFileName] = useState("");
+  const [sheetId, setSheetId] = useState("");
+  const [sheetTab, setSheetTab] = useState("");
+  const [serviceAccountJson, setServiceAccountJson] = useState("");
 
-  const apiPayload = {
+  const apiPayload = () => ({
     job_description: jobDescription,
     override_title: "",
     override_company: "",
     override_location: "",
-    override_contract: ""
-  };
+    override_contract: "",
+    template_docx_base64: templateDocxBase64 || undefined,
+    template_file_name: templateFileName || undefined,
+    google_sheet_id: sheetId || undefined,
+    google_sheet_tab: sheetTab || undefined,
+    google_service_account_json: serviceAccountJson || undefined,
+  });
 
   async function postJSON<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
@@ -53,6 +63,36 @@ export default function HomePage() {
     return payload as T;
   }
 
+  async function fileToBase64(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer();
+    let binary = "";
+    const bytes = new Uint8Array(arrayBuffer);
+    for (let i = 0; i < bytes.length; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  const onResumeTemplateChange = async (file?: File) => {
+    if (!file) {
+      setTemplateDocxBase64("");
+      setTemplateFileName("");
+      return;
+    }
+    const base64 = await fileToBase64(file);
+    setTemplateDocxBase64(base64);
+    setTemplateFileName(file.name);
+  };
+
+  const onServiceAccountJsonChange = async (file?: File) => {
+    if (!file) {
+      setServiceAccountJson("");
+      return;
+    }
+    const text = await file.text();
+    setServiceAccountJson(text);
+  };
+
   const onParseAndLog = async (e: FormEvent) => {
     e.preventDefault();
     if (!jobDescription.trim()) {
@@ -63,7 +103,7 @@ export default function HomePage() {
       setIsBusy(true);
       const payload = await postJSON<{ parsed: ParsedJD; sheet_status: string }>(
         "/api/parse-and-log",
-        apiPayload
+        apiPayload()
       );
       setParsed(payload.parsed);
       setStatus(payload.sheet_status);
@@ -94,7 +134,7 @@ export default function HomePage() {
         file_name: string;
         sheet_status: string;
       }>("/api/tailor-resume", {
-        ...apiPayload
+        ...apiPayload()
       });
       setParsed(payload.parsed);
       setResumePath(payload.output_path);
@@ -127,7 +167,7 @@ export default function HomePage() {
     }
     try {
       setIsBusy(true);
-      const payload = await postJSON<{ email_template: string }>("/api/generate-email", apiPayload);
+      const payload = await postJSON<{ email_template: string }>("/api/generate-email", apiPayload());
       setEmailTemplate(payload.email_template);
       setStatus("Email template generated.");
     } catch (error) {
@@ -144,7 +184,7 @@ export default function HomePage() {
     }
     try {
       setIsBusy(true);
-      const payload = await postJSON<{ cover_letter: string }>("/api/generate-cover-letter", apiPayload);
+      const payload = await postJSON<{ cover_letter: string }>("/api/generate-cover-letter", apiPayload());
       setCoverLetter(payload.cover_letter);
       setStatus("Cover letter generated.");
     } catch (error) {
@@ -163,7 +203,7 @@ export default function HomePage() {
       setIsBusy(true);
       const payload = await postJSON<{ call_intro: string; sheet_status?: string }>(
         "/api/generate-call-intro",
-        apiPayload
+        apiPayload()
       );
       setCallIntro(payload.call_intro);
       setStatus(payload.sheet_status || "My call self-intro generated.");
@@ -176,8 +216,8 @@ export default function HomePage() {
 
   return (
     <main className="container">
-      <h1>Resume Tailor Frontend</h1>
-      <p className="sub">Paste JD once, then parse, tailor, and generate email.</p>
+      <h1>AI Resume Tailoring and Job Tracking</h1>
+      <p className="sub">Paste JD once, then parse/log, tailor resume, and generate outreach content.</p>
 
       <form onSubmit={onParseAndLog} className="panel">
         <label htmlFor="jd">Job Description</label>
@@ -189,9 +229,59 @@ export default function HomePage() {
           rows={14}
         />
 
+        <label htmlFor="resume-template">Resume Template (.docx, optional)</label>
+        <input
+          id="resume-template"
+          type="file"
+          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={async (e) => {
+            setStatus("Reading resume template...");
+            try {
+              await onResumeTemplateChange(e.target.files?.[0]);
+              setStatus("Resume template ready.");
+            } catch {
+              setStatus("Failed to read resume template.");
+            }
+          }}
+        />
+
+        <label htmlFor="sheet-id">Google Sheet ID (optional override)</label>
+        <input
+          id="sheet-id"
+          type="text"
+          value={sheetId}
+          onChange={(e) => setSheetId(e.target.value)}
+          placeholder="Leave empty to use GOOGLE_SHEET_ID env"
+        />
+
+        <label htmlFor="sheet-tab">Google Sheet Tab (optional override)</label>
+        <input
+          id="sheet-tab"
+          type="text"
+          value={sheetTab}
+          onChange={(e) => setSheetTab(e.target.value)}
+          placeholder="Leave empty to use detected tabs/default env tab"
+        />
+
+        <label htmlFor="service-json-file">Service Account JSON File (optional override)</label>
+        <input
+          id="service-json-file"
+          type="file"
+          accept=".json,application/json"
+          onChange={async (e) => {
+            setStatus("Reading service account JSON...");
+            try {
+              await onServiceAccountJsonChange(e.target.files?.[0]);
+              setStatus("Service account JSON ready.");
+            } catch {
+              setStatus("Failed to read service account JSON.");
+            }
+          }}
+        />
+
         <div className="row">
           <small>
-            Uses your configured base Data Engineer DOCX template on the server for every tailored resume.
+            Leave inputs empty to use server env vars. Uploading files lets you run with a different resume and different Sheet JSON for this session.
           </small>
         </div>
 
@@ -218,20 +308,20 @@ export default function HomePage() {
           {parsed ? (
             <ul>
               <li><strong>Title:</strong> {parsed.title}</li>
-              <li><strong>Company/Vendor:</strong> {parsed.company_or_vendor || "Not specified"}</li>
-              <li><strong>Recruiter Name:</strong> {parsed.recruiter_name || "Not specified"}</li>
-              <li><strong>Vendor Email:</strong> {parsed.vendor_email || "Not specified"}</li>
-              <li><strong>Vendor Phone:</strong> {parsed.vendor_phone || "Not specified"}</li>
-              <li><strong>Location:</strong> {parsed.location}</li>
-              <li><strong>Work Mode:</strong> {parsed.remote_mode || "Not specified"}</li>
-              <li><strong>Contract Type:</strong> {parsed.contract_type || "Not specified"}</li>
-              <li><strong>Pay Rate:</strong> {parsed.pay_rate || "Not specified"}</li>
-              <li><strong>Job URL/ID:</strong> {parsed.job_id_url || "Not specified"}</li>
-              <li><strong>Skills:</strong> {parsed.skills.join(", ") || "No skills detected yet"}</li>
-              <li><strong>Role Track:</strong> {parsed.role_track || "general"}</li>
-              <li><strong>Required Terms:</strong> {(parsed.required_terms || []).join(", ") || "Not detected"}</li>
-              <li><strong>Fit Score:</strong> {parsed.fit_score ?? "N/A"}</li>
-              <li><strong>Contract-like:</strong> {String(parsed.is_contract_like ?? false)}</li>
+              <li><strong>company/vendor:</strong> {parsed.company_or_vendor || "Not specified"}</li>
+              <li><strong>recruiter_name:</strong> {parsed.recruiter_name || "Not specified"}</li>
+              <li><strong>vendor_email:</strong> {parsed.vendor_email || "Not specified"}</li>
+              <li><strong>vendor_phone:</strong> {parsed.vendor_phone || "Not specified"}</li>
+              <li><strong>location:</strong> {parsed.location || "Not specified"}</li>
+              <li><strong>remote_mode:</strong> {parsed.remote_mode || "Not specified"}</li>
+              <li><strong>contract_type:</strong> {parsed.contract_type || "Not specified"}</li>
+              <li><strong>pay_rate:</strong> {parsed.pay_rate || "Not specified"}</li>
+              <li><strong>job_id_url:</strong> {parsed.job_id_url || "Not specified"}</li>
+              <li><strong>skills[]:</strong> {parsed.skills.join(", ") || "No skills detected yet"}</li>
+              <li><strong>role_track:</strong> {parsed.role_track || "general"}</li>
+              <li><strong>required_terms[]:</strong> {(parsed.required_terms || []).join(", ") || "Not detected"}</li>
+              <li><strong>fit_score:</strong> {parsed.fit_score ?? "N/A"}</li>
+              <li><strong>is_contract_like:</strong> {String(parsed.is_contract_like ?? false)}</li>
             </ul>
           ) : (
             <p>Click "Parse and Log JD" to see extracted fields.</p>

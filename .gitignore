@@ -5,3 +5,8 @@ outputs/
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+tracker-489312-b56e90ceff54.json
+*.docx
+*.xlsx
+
+.DS_Store

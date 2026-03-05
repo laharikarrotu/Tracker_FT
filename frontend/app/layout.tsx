@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Resume Tailor Frontend",
-  description: "C2C Data Engineer job marketing assistant"
+  title: "AI Resume Tailor + Job Tracker",
+  description: "Vercel-only Next.js app for JD parsing, resume tailoring, and job tracking."
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
