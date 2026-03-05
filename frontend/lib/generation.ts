@@ -7,7 +7,8 @@ import type { ParsedJD, TailoredContent } from "@/lib/types";
 export async function generateTailoredContent(
   parsed: ParsedJD,
   summaryCount: number,
-  experienceCount: number
+  experienceCount: number,
+  anthropicApiKey?: string
 ): Promise<TailoredContent> {
   const prompt = `
 You are an expert C2C consulting resume writer for ${CANDIDATE_PROFILE.defaultRoleFamily} roles.
@@ -43,6 +44,7 @@ Parsed fields:
     prompt,
     family: "sonnet",
     preferredModel: appConfig.anthropicTailorModel,
+    apiKey: anthropicApiKey,
     maxTokens: 1400,
     temperature: 0.3,
     attemptsPerModel: 2,
@@ -64,7 +66,7 @@ Parsed fields:
   };
 }
 
-export async function generateSubmissionEmail(parsed: ParsedJD): Promise<string> {
+export async function generateSubmissionEmail(parsed: ParsedJD, anthropicApiKey?: string): Promise<string> {
   const roleName = parsed.title || CANDIDATE_PROFILE.defaultRoleFamily;
   const companyName = parsed.company_or_vendor || "the team";
   const recruiterName = parsed.recruiter_name || "Hiring Team";
@@ -93,13 +95,14 @@ Variables:
     prompt,
     family: "haiku",
     preferredModel: appConfig.anthropicEmailModel,
+    apiKey: anthropicApiKey,
     maxTokens: 450,
     temperature: 0.2,
     attemptsPerModel: 2,
   });
 }
 
-export async function generateCoverLetter(parsed: ParsedJD): Promise<string> {
+export async function generateCoverLetter(parsed: ParsedJD, anthropicApiKey?: string): Promise<string> {
   const prompt = `
 Write a professional one-page cover letter tailored to this company/role.
 
@@ -127,13 +130,14 @@ Candidate:
     prompt,
     family: "haiku",
     preferredModel: appConfig.anthropicEmailModel,
+    apiKey: anthropicApiKey,
     maxTokens: 900,
     temperature: 0.25,
     attemptsPerModel: 2,
   });
 }
 
-export async function generateCallIntro(parsed: ParsedJD): Promise<string> {
+export async function generateCallIntro(parsed: ParsedJD, anthropicApiKey?: string): Promise<string> {
   const prompt = `
 Write a short self-introduction script in 4-5 lines max for a candidate answering a recruiter call.
 
@@ -159,6 +163,7 @@ Job context:
     prompt,
     family: "haiku",
     preferredModel: appConfig.anthropicEmailModel,
+    apiKey: anthropicApiKey,
     maxTokens: 260,
     temperature: 0.25,
     attemptsPerModel: 2,

@@ -1,5 +1,6 @@
 export type JDRequestBody = {
   job_description: string;
+  anthropic_api_key?: string;
   override_title?: string;
   override_company?: string;
   override_location?: string;

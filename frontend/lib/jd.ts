@@ -242,7 +242,11 @@ function parseClaudeExtraction(text: string): ClaudeExtraction {
   };
 }
 
-export async function enrichParsedJDWithClaude(rawJD: string, baseline: ParsedJD): Promise<ParsedJD> {
+export async function enrichParsedJDWithClaude(
+  rawJD: string,
+  baseline: ParsedJD,
+  anthropicApiKey?: string
+): Promise<ParsedJD> {
   if (!appConfig.claudeExtractionEnabled) return baseline;
   const prompt = `
 Extract job-description fields as strict JSON. Do not invent data.
@@ -277,6 +281,7 @@ ${rawJD}
       prompt,
       family: "haiku",
       preferredModel: appConfig.anthropicExtractionModel,
+      apiKey: anthropicApiKey,
       maxTokens: 700,
       temperature: 0.1,
       attemptsPerModel: 4,

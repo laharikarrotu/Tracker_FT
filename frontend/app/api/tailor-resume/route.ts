@@ -26,7 +26,12 @@ export async function POST(req: NextRequest) {
     const summaryCount = counts.summaryCount;
     const experienceCount = counts.experienceCount;
 
-    const tailored = await generateTailoredContent(parsed, summaryCount, experienceCount);
+    const tailored = await generateTailoredContent(
+      parsed,
+      summaryCount,
+      experienceCount,
+      body.anthropic_api_key
+    );
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
     const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
 

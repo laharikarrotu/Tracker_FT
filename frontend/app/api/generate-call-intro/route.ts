@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await parseRequestBody(req);
     const parsed = await parseAndEnrichJD(body);
-    const call_intro = await generateCallIntro(parsed);
+    const call_intro = await generateCallIntro(parsed, body.anthropic_api_key);
     let sheet_status = "Call intro logged to Google Sheets.";
     try {
       await appendToGoogleSheet({

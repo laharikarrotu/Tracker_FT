@@ -33,12 +33,14 @@ export default function HomePage() {
   const [isBusy, setIsBusy] = useState(false);
   const [templateDocxBase64, setTemplateDocxBase64] = useState("");
   const [templateFileName, setTemplateFileName] = useState("");
+  const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [sheetId, setSheetId] = useState("");
   const [sheetTab, setSheetTab] = useState("");
   const [serviceAccountJson, setServiceAccountJson] = useState("");
 
   const apiPayload = () => ({
     job_description: jobDescription,
+    anthropic_api_key: anthropicApiKey || undefined,
     override_title: "",
     override_company: "",
     override_location: "",
@@ -229,61 +231,75 @@ export default function HomePage() {
           rows={14}
         />
 
-        <label htmlFor="resume-template">Resume Template (.docx, optional)</label>
-        <input
-          id="resume-template"
-          type="file"
-          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          onChange={async (e) => {
-            setStatus("Reading resume template...");
-            try {
-              await onResumeTemplateChange(e.target.files?.[0]);
-              setStatus("Resume template ready.");
-            } catch {
-              setStatus("Failed to read resume template.");
-            }
-          }}
-        />
+        <details className="row">
+          <summary>Advanced overrides (optional)</summary>
 
-        <label htmlFor="sheet-id">Google Sheet ID (optional override)</label>
-        <input
-          id="sheet-id"
-          type="text"
-          value={sheetId}
-          onChange={(e) => setSheetId(e.target.value)}
-          placeholder="Leave empty to use GOOGLE_SHEET_ID env"
-        />
+          <label htmlFor="resume-template">Resume Template (.docx, optional)</label>
+          <input
+            id="resume-template"
+            type="file"
+            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={async (e) => {
+              setStatus("Reading resume template...");
+              try {
+                await onResumeTemplateChange(e.target.files?.[0]);
+                setStatus("Resume template ready.");
+              } catch {
+                setStatus("Failed to read resume template.");
+              }
+            }}
+          />
 
-        <label htmlFor="sheet-tab">Google Sheet Tab (optional override)</label>
-        <input
-          id="sheet-tab"
-          type="text"
-          value={sheetTab}
-          onChange={(e) => setSheetTab(e.target.value)}
-          placeholder="Leave empty to use detected tabs/default env tab"
-        />
+          <label htmlFor="anthropic-api-key">Claude API Key (optional override)</label>
+          <input
+            id="anthropic-api-key"
+            type="password"
+            value={anthropicApiKey}
+            onChange={(e) => setAnthropicApiKey(e.target.value)}
+            placeholder="Leave empty to use server ANTHROPIC_API_KEY"
+            autoComplete="off"
+          />
 
-        <label htmlFor="service-json-file">Service Account JSON File (optional override)</label>
-        <input
-          id="service-json-file"
-          type="file"
-          accept=".json,application/json"
-          onChange={async (e) => {
-            setStatus("Reading service account JSON...");
-            try {
-              await onServiceAccountJsonChange(e.target.files?.[0]);
-              setStatus("Service account JSON ready.");
-            } catch {
-              setStatus("Failed to read service account JSON.");
-            }
-          }}
-        />
+          <label htmlFor="sheet-id">Google Sheet ID (optional override)</label>
+          <input
+            id="sheet-id"
+            type="text"
+            value={sheetId}
+            onChange={(e) => setSheetId(e.target.value)}
+            placeholder="Leave empty to use GOOGLE_SHEET_ID env"
+          />
 
-        <div className="row">
-          <small>
-            Leave inputs empty to use server env vars. Uploading files lets you run with a different resume and different Sheet JSON for this session.
-          </small>
-        </div>
+          <label htmlFor="sheet-tab">Google Sheet Tab (optional override)</label>
+          <input
+            id="sheet-tab"
+            type="text"
+            value={sheetTab}
+            onChange={(e) => setSheetTab(e.target.value)}
+            placeholder="Leave empty to use detected tabs/default env tab"
+          />
+
+          <label htmlFor="service-json-file">Service Account JSON File (optional override)</label>
+          <input
+            id="service-json-file"
+            type="file"
+            accept=".json,application/json"
+            onChange={async (e) => {
+              setStatus("Reading service account JSON...");
+              try {
+                await onServiceAccountJsonChange(e.target.files?.[0]);
+                setStatus("Service account JSON ready.");
+              } catch {
+                setStatus("Failed to read service account JSON.");
+              }
+            }}
+          />
+
+          <div className="row">
+            <small>
+              Leave all fields empty to use default server env vars. Use overrides only for temporary testing.
+            </small>
+          </div>
+        </details>
 
         <div className="actions">
           <button type="submit">Parse and Log JD</button>

@@ -6,7 +6,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await parseRequestBody(req);
     const parsed = await parseAndEnrichJD(body);
-    const email_template = await generateSubmissionEmail(parsed);
+    const email_template = await generateSubmissionEmail(parsed, body.anthropic_api_key);
     return NextResponse.json({ email_template });
   } catch (error) {
     return handleRouteError(error);

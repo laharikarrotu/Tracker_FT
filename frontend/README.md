@@ -88,6 +88,7 @@ Request body schema for all routes:
 ```json
 {
   "job_description": "string",
+  "anthropic_api_key": "string (optional per-user Claude key override)",
   "override_title": "string (optional)",
   "override_company": "string (optional)",
   "override_location": "string (optional)",

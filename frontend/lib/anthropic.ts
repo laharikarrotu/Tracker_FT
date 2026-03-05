@@ -14,8 +14,8 @@ function shouldRetryAnthropicError(message: string): boolean {
   );
 }
 
-function anthropicClient(): Anthropic {
-  const apiKey = (process.env.ANTHROPIC_API_KEY ?? "").trim();
+function anthropicClient(apiKeyOverride?: string): Anthropic {
+  const apiKey = (apiKeyOverride || process.env.ANTHROPIC_API_KEY || "").trim();
   if (!apiKey) throw new AppError("Missing ANTHROPIC_API_KEY.", 500);
   return new Anthropic({ apiKey });
 }
@@ -66,11 +66,12 @@ export async function callClaudeWithFallback(args: {
   prompt: string;
   family: "sonnet" | "haiku";
   preferredModel?: string;
+  apiKey?: string;
   maxTokens: number;
   temperature: number;
   attemptsPerModel: number;
 }): Promise<string> {
-  const client = anthropicClient();
+  const client = anthropicClient(args.apiKey);
   const discovered = await discoverAvailableModelIds(client);
   const models = prioritizeModels(discovered, args.preferredModel ?? "", args.family);
 

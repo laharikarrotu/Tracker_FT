@@ -13,7 +13,11 @@ export async function parseRequestBody(req: NextRequest): Promise<JDRequestBody>
 
 export async function parseAndEnrichJD(body: JDRequestBody): Promise<ParsedJD> {
   const baseline = parseJobDescription(body.job_description);
-  const enriched = await enrichParsedJDWithClaude(body.job_description, baseline);
+  const enriched = await enrichParsedJDWithClaude(
+    body.job_description,
+    baseline,
+    body.anthropic_api_key
+  );
   return applyOverrides(enriched, body);
 }
 
