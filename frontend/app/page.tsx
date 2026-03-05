@@ -216,7 +216,7 @@ export default function HomePage() {
 
   return (
     <main className="container">
-      <h1>AI Resume Tailoring and Job Tracking</h1>
+      <h1>✨ AI Resume Tailoring and Job Tracking</h1>
       <p className="sub">Paste JD once, then parse/log, tailor resume, and generate outreach content.</p>
 
       <form onSubmit={onParseAndLog} className="panel">
@@ -304,7 +304,7 @@ export default function HomePage() {
 
       <section className="grid">
         <div className="panel">
-          <h2>Extracted Details</h2>
+          <h2>🔎 Extracted Details</h2>
           {parsed ? (
             <ul>
               <li><strong>Title:</strong> {parsed.title}</li>
@@ -329,7 +329,7 @@ export default function HomePage() {
         </div>
 
         <div className="panel">
-          <h2>Outputs</h2>
+          <h2>🪄 Outputs</h2>
           <p><strong>Status:</strong> {status}</p>
           <p><strong>Resume Output:</strong> {resumePath || "Not generated yet"}</p>
           <label htmlFor="email-template">Submission Email Template</label>

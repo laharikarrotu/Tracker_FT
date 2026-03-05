@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
 * {
@@ -9,8 +9,41 @@
 body {
   margin: 0;
   font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
-  background: #0f172a;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 12% -5%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(1100px 500px at 90% 0%, rgba(139, 92, 246, 0.14), transparent 58%),
+    linear-gradient(140deg, #0b1021 0%, #0f172a 45%, #111827 100%);
   color: #e2e8f0;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  filter: blur(60px);
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.45;
+  animation: floatBlob 12s ease-in-out infinite;
+}
+
+body::before {
+  top: -120px;
+  left: -80px;
+  background: rgba(56, 189, 248, 0.45);
+}
+
+body::after {
+  bottom: -140px;
+  right: -100px;
+  background: rgba(167, 139, 250, 0.35);
+  animation-delay: -5s;
 }
 
 .container {
@@ -22,35 +55,63 @@ body {
 h1 {
   margin: 0;
   font-size: 32px;
+  letter-spacing: 0.2px;
+  background: linear-gradient(90deg, #f8fafc 0%, #dbeafe 40%, #c4b5fd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .sub {
   margin-top: 8px;
   color: #94a3b8;
+  animation: fadeInUp 0.55s ease;
 }
 
 .panel {
-  border: 1px solid #334155;
-  border-radius: 12px;
+  border: 1px solid rgba(100, 116, 139, 0.45);
+  border-radius: 16px;
   padding: 16px;
-  background: #111827;
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.9), rgba(17, 24, 39, 0.75));
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.22);
+  backdrop-filter: blur(8px);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  animation: fadeInUp 0.45s ease both;
+}
+
+.panel:hover {
+  transform: translateY(-2px);
+  border-color: rgba(96, 165, 250, 0.6);
+  box-shadow: 0 14px 36px rgba(30, 41, 59, 0.35);
 }
 
 label {
   display: block;
   font-weight: 600;
   margin-bottom: 8px;
+  margin-top: 8px;
+  color: #dbeafe;
 }
 
 textarea,
 select,
 input {
   width: 100%;
-  background: #0b1220;
-  border: 1px solid #334155;
+  background: rgba(11, 18, 32, 0.72);
+  border: 1px solid rgba(71, 85, 105, 0.8);
   color: #e2e8f0;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+textarea:focus,
+input:focus,
+select:focus {
+  outline: none;
+  border-color: #60a5fa;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.22);
 }
 
 textarea {
@@ -69,17 +130,32 @@ textarea {
 }
 
 button {
-  border: 1px solid #3b82f6;
-  background: #1d4ed8;
+  border: 1px solid rgba(96, 165, 250, 0.65);
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 65%, #3b82f6 100%);
   color: #ffffff;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px 14px;
   cursor: pointer;
   font-weight: 600;
+  box-shadow: 0 8px 18px rgba(29, 78, 216, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 button:hover {
-  background: #2563eb;
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.33);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .grid {
@@ -98,4 +174,43 @@ ul {
   margin-top: 14px;
   color: #94a3b8;
   font-size: 14px;
+}
+
+small {
+  color: #93c5fd;
+}
+
+code {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(71, 85, 105, 0.65);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatBlob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(10px, -8px, 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
