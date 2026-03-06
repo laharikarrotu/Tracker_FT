@@ -29,6 +29,7 @@ export default function HomePage() {
   const [coverLetter, setCoverLetter] = useState("");
   const [callIntro, setCallIntro] = useState("");
   const [resumePath, setResumePath] = useState("");
+  const [tailoredFitScore, setTailoredFitScore] = useState<number | null>(null);
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [templateDocxBase64, setTemplateDocxBase64] = useState("");
@@ -130,6 +131,7 @@ export default function HomePage() {
           experience_points: string[];
           skills_line: string;
           contract_alignment_note: string;
+          tailored_fit_score: number;
         };
         output_path: string;
         docx_base64: string;
@@ -140,6 +142,7 @@ export default function HomePage() {
       });
       setParsed(payload.parsed);
       setResumePath(payload.output_path);
+      setTailoredFitScore(payload.tailored.tailored_fit_score);
       if (payload.docx_base64) {
         const bytes = Uint8Array.from(atob(payload.docx_base64), (c) => c.charCodeAt(0));
         const blob = new Blob([bytes], {
@@ -348,6 +351,7 @@ export default function HomePage() {
           <h2>🪄 Outputs</h2>
           <p><strong>Status:</strong> {status}</p>
           <p><strong>Resume Output:</strong> {resumePath || "Not generated yet"}</p>
+          <p><strong>Tailored Fit Score:</strong> {tailoredFitScore ?? "Not generated yet"}</p>
           <label htmlFor="email-template">Submission Email Template</label>
           <textarea id="email-template" value={emailTemplate} readOnly rows={12} />
           <label htmlFor="cover-letter">Cover Letter</label>

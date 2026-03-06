@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { createHash } from "crypto";
 import { appConfig } from "@/lib/config";
 import { AppError, retryWithBackoff } from "@/lib/common";
 import type { ParsedJD } from "@/lib/types";
@@ -7,6 +8,12 @@ type SheetRuntimeConfig = {
   googleSheetId?: string;
   googleSheetTab?: string;
   googleServiceAccountJson?: string;
+};
+
+export type SheetAppendResult = {
+  duplicateLikely: boolean;
+  updatedRows: number;
+  updatedTabs: string[];
 };
 
 function normalize(value: string): string {
@@ -56,6 +63,15 @@ function firstHeaderIndex(normalizedHeaders: string[], keys: string[]): number {
   return -1;
 }
 
+function buildJobFingerprint(parsed: ParsedJD): string {
+  const fingerprintBase = [
+    parsed.title.trim().toLowerCase(),
+    parsed.company_or_vendor.trim().toLowerCase(),
+    parsed.raw_jd.trim().toLowerCase().replace(/\s+/g, " "),
+  ].join("|");
+  return createHash("sha256").update(fingerprintBase).digest("hex");
+}
+
 function parseServiceAccount(serviceAccountRaw: string): Record<string, string> {
   try {
     return JSON.parse(serviceAccountRaw);
@@ -98,8 +114,9 @@ export async function appendToGoogleSheet(args: {
   outputPath?: string;
   notes?: string;
   callIntro?: string;
+  tailoredFitScore?: number;
   config?: SheetRuntimeConfig;
-}) {
+}): Promise<SheetAppendResult> {
   const { sheetId, sheets } = await getSheetsClient(args.config);
   const nowISO = new Date().toISOString();
   const contractType =
@@ -107,6 +124,10 @@ export async function appendToGoogleSheet(args: {
   const skillsBrief = args.parsed.skills.join(", ");
   const note = args.notes || args.parsed.notes;
   const callIntro = args.callIntro || "";
+  const fingerprint = buildJobFingerprint(args.parsed);
+  let duplicateLikely = false;
+  let updatedRows = 0;
+  const updatedTabs: string[] = [];
 
   const headerToValue = (header: string): string => {
     const h = normalize(header);
@@ -181,8 +202,13 @@ export async function appendToGoogleSheet(args: {
       fitscore: String(args.parsed.fit_score),
       matchscore: String(args.parsed.fit_score),
       roletrack: args.parsed.role_track,
+      jobfingerprint: fingerprint,
+      jdfingerprint: fingerprint,
+      duplicatekey: fingerprint,
+      jdhash: fingerprint,
       resumeoutputpath: args.outputPath || "",
       resumefile: args.outputPath || "",
+      tailoredfitscore: String(args.tailoredFitScore ?? ""),
       companyinemail: "",
       followupdate: "",
       interviewdate: "",
@@ -327,13 +353,29 @@ export async function appendToGoogleSheet(args: {
       "vendoremail",
       "email",
     ]);
+    const iFingerprint = firstHeaderIndex(normalizedHeaders, [
+      "jobfingerprint",
+      "jdfingerprint",
+      "duplicatekey",
+      "jdhash",
+    ]);
 
     let matchedRowNumber = -1;
     for (let r = 0; r < values.length; r += 1) {
       const rowVals = values[r];
+      const fingerprintMatch =
+        iFingerprint >= 0 &&
+        fingerprint &&
+        textEq(String(rowVals[iFingerprint] || ""), fingerprint);
+      if (fingerprintMatch) {
+        matchedRowNumber = r + 3;
+        duplicateLikely = true;
+        break;
+      }
       const jobUrlMatch = iJobUrl >= 0 && args.parsed.job_id_url && textEq(String(rowVals[iJobUrl] || ""), args.parsed.job_id_url);
       if (jobUrlMatch) {
         matchedRowNumber = r + 3;
+        duplicateLikely = true;
         break;
       }
       let score = 0;
@@ -353,6 +395,7 @@ export async function appendToGoogleSheet(args: {
         score += 1;
       if (score >= 3 || (score >= 2 && Boolean(args.parsed.vendor_email))) {
         matchedRowNumber = r + 3;
+        duplicateLikely = true;
         break;
       }
     }
@@ -366,6 +409,8 @@ export async function appendToGoogleSheet(args: {
           requestBody: { values: [row] },
         })
       );
+      updatedRows += 1;
+      updatedTabs.push(tab);
     } else {
       await withSheetsRetry(() =>
         sheets.spreadsheets.values.append({
@@ -375,6 +420,14 @@ export async function appendToGoogleSheet(args: {
           requestBody: { values: [row] },
         })
       );
+      updatedRows += 1;
+      updatedTabs.push(tab);
     }
   }
+
+  return {
+    duplicateLikely,
+    updatedRows,
+    updatedTabs,
+  };
 }

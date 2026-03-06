@@ -4,6 +4,30 @@ import { extractJsonObject } from "@/lib/common";
 import { CANDIDATE_PROFILE, signatureBlock } from "@/lib/profile";
 import type { ParsedJD, TailoredContent } from "@/lib/types";
 
+export function computeTailoredFitScore(parsed: ParsedJD, tailored: TailoredContent): number {
+  const required = parsed.required_terms.length ? parsed.required_terms : parsed.skills;
+  if (!required.length) return parsed.fit_score;
+
+  const text = [
+    tailored.summary_points.join(" "),
+    tailored.experience_points.join(" "),
+    tailored.skills_line,
+    tailored.tailored_for_role,
+    parsed.title,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const covered = required.filter((term) => text.includes(term.toLowerCase())).length;
+  const coverageRatio = covered / required.length;
+  const coverageScore = Math.round(coverageRatio * 35);
+  const roleAlignmentBonus = text.includes(parsed.title.toLowerCase()) ? 5 : 0;
+
+  // Keep tailored score at least as high as parsed baseline when coverage improves.
+  const recomputed = Math.round(parsed.fit_score * 0.65 + coverageScore + roleAlignmentBonus);
+  return Math.max(parsed.fit_score, Math.min(recomputed, 100));
+}
+
 export async function generateTailoredContent(
   parsed: ParsedJD,
   summaryCount: number,

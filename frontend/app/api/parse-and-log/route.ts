@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const parsed = await parseAndEnrichJD(body);
     let sheetStatus = "JD logged to Google Sheets.";
     try {
-      await appendToGoogleSheet({
+      const sheetResult = await appendToGoogleSheet({
         parsed,
         status: "Not Applied Yet",
         config: {
@@ -17,6 +17,9 @@ export async function POST(req: NextRequest) {
           googleServiceAccountJson: body.google_service_account_json,
         },
       });
+      if (sheetResult.duplicateLikely) {
+        sheetStatus = "This JD looks duplicate (same JD + company + title). Existing row was updated.";
+      }
     } catch (sheetError) {
       const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";
       sheetStatus = `JD parsed, but Google Sheets logging failed: ${message}`;
