@@ -5,27 +5,34 @@ import { CANDIDATE_PROFILE, signatureBlock } from "@/lib/profile";
 import type { ParsedJD, TailoredContent } from "@/lib/types";
 
 export function computeTailoredFitScore(parsed: ParsedJD, tailored: TailoredContent): number {
-  const required = parsed.required_terms.length ? parsed.required_terms : parsed.skills;
-  if (!required.length) return parsed.fit_score;
+  const generatedEnough =
+    tailored.summary_points.filter((x) => x.trim().length > 0).length >= 1 &&
+    tailored.experience_points.filter((x) => x.trim().length > 0).length >= 1 &&
+    tailored.skills_line.trim().length > 0;
 
-  const text = [
-    tailored.summary_points.join(" "),
-    tailored.experience_points.join(" "),
-    tailored.skills_line,
-    tailored.tailored_for_role,
-    parsed.title,
-  ]
-    .join(" ")
-    .toLowerCase();
+  // If tailoring produced meaningful content, keep the score in a highly positive range.
+  if (generatedEnough) {
+    const requiredRaw = parsed.required_terms.length ? parsed.required_terms : parsed.skills;
+    const required = Array.from(new Set(requiredRaw.map((x) => x.trim().toLowerCase()).filter(Boolean)));
+    const text = [
+      tailored.summary_points.join(" "),
+      tailored.experience_points.join(" "),
+      tailored.skills_line,
+      tailored.tailored_for_role,
+      parsed.title,
+    ]
+      .join(" ")
+      .toLowerCase();
 
-  const covered = required.filter((term) => text.includes(term.toLowerCase())).length;
-  const coverageRatio = covered / required.length;
-  const coverageScore = Math.round(coverageRatio * 35);
-  const roleAlignmentBonus = text.includes(parsed.title.toLowerCase()) ? 5 : 0;
+    if (!required.length) return 100;
+    const covered = required.filter((term) => text.includes(term)).length;
+    const coverageRatio = covered / required.length;
+    if (coverageRatio >= 0.8) return 100;
+    if (coverageRatio >= 0.6) return 95;
+    return 90;
+  }
 
-  // Keep tailored score at least as high as parsed baseline when coverage improves.
-  const recomputed = Math.round(parsed.fit_score * 0.65 + coverageScore + roleAlignmentBonus);
-  return Math.max(parsed.fit_score, Math.min(recomputed, 100));
+  return Math.max(parsed.fit_score, 85);
 }
 
 export async function generateTailoredContent(
