@@ -4,6 +4,17 @@ import { extractJsonObject } from "@/lib/common";
 import { CANDIDATE_PROFILE, signatureBlock } from "@/lib/profile";
 import type { ParsedJD, TailoredContent } from "@/lib/types";
 
+function normalizeLine(text: unknown): string {
+  return String(text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeBullet(text: unknown): string {
+  return String(text ?? "")
+    .replace(/^[\s*•\-–—]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function computeTailoredFitScore(parsed: ParsedJD, tailored: TailoredContent): number {
   const generatedEnough =
     tailored.summary_points.filter((x) => x.trim().length > 0).length >= 1 &&
@@ -55,8 +66,13 @@ Return ONLY JSON:
 Rules:
 - summary_points count exactly ${summaryCount}
 - experience_points count exactly ${experienceCount}
-- concise, professional, contract-friendly
+- concise, professional, full-time friendly
 - Preserve factual integrity from JD and avoid invented claims.
+- Keep every summary bullet to one line and around 20-22 words.
+- Keep every experience bullet to one line and around 25-28 words.
+- Do NOT include bullet symbols (no "-", "*", or "•"), the DOCX already has bullet formatting.
+- Keep skills_line compact (around 20-26 words).
+- Goal: content should fit in a typical 2-page resume template.
 
 Job description:
 ${parsed.raw_jd}
@@ -82,18 +98,18 @@ Parsed fields:
   });
   const data = extractJsonObject(text);
   const summary_points = Array.isArray(data.summary_points)
-    ? data.summary_points.map((x) => String(x).trim()).filter(Boolean)
+    ? data.summary_points.map((x) => normalizeBullet(x)).filter(Boolean)
     : [];
   const experience_points = Array.isArray(data.experience_points)
-    ? data.experience_points.map((x) => String(x).trim()).filter(Boolean)
+    ? data.experience_points.map((x) => normalizeBullet(x)).filter(Boolean)
     : [];
 
   return {
     summary_points: (summary_points.concat(Array(summaryCount).fill("")).slice(0, summaryCount) as string[]),
     experience_points: (experience_points.concat(Array(experienceCount).fill("")).slice(0, experienceCount) as string[]),
-    skills_line: String(data.skills_line ?? "").trim(),
-    tailored_for_role: String(data.tailored_for_role ?? parsed.title ?? CANDIDATE_PROFILE.defaultRoleFamily).trim(),
-    contract_alignment_note: String(data.contract_alignment_note ?? parsed.notes).trim(),
+    skills_line: normalizeLine(data.skills_line),
+    tailored_for_role: normalizeLine(data.tailored_for_role ?? parsed.title ?? CANDIDATE_PROFILE.defaultRoleFamily),
+    contract_alignment_note: normalizeLine(data.contract_alignment_note ?? parsed.notes),
   };
 }
 
