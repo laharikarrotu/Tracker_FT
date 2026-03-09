@@ -20,6 +20,14 @@ type ParsedJD = {
   is_contract_like?: boolean;
 };
 
+type TailoredResult = {
+  summary_points: string[];
+  experience_points: string[];
+  skills_line: string;
+  contract_alignment_note: string;
+  tailored_fit_score: number;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export default function HomePage() {
@@ -30,6 +38,9 @@ export default function HomePage() {
   const [callIntro, setCallIntro] = useState("");
   const [resumePath, setResumePath] = useState("");
   const [tailoredFitScore, setTailoredFitScore] = useState<number | null>(null);
+  const [tailoredResult, setTailoredResult] = useState<TailoredResult | null>(null);
+  const [resumeDocxBase64, setResumeDocxBase64] = useState("");
+  const [resumeFileName, setResumeFileName] = useState("");
   const [parsed, setParsed] = useState<ParsedJD | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [templateDocxBase64, setTemplateDocxBase64] = useState("");
@@ -126,13 +137,7 @@ export default function HomePage() {
       setIsBusy(true);
       const payload = await postJSON<{
         parsed: ParsedJD;
-        tailored: {
-          summary_points: string[];
-          experience_points: string[];
-          skills_line: string;
-          contract_alignment_note: string;
-          tailored_fit_score: number;
-        };
+        tailored: TailoredResult;
         output_path: string;
         docx_base64: string;
         file_name: string;
@@ -142,27 +147,109 @@ export default function HomePage() {
       });
       setParsed(payload.parsed);
       setResumePath(payload.output_path);
+      setTailoredResult(payload.tailored);
       setTailoredFitScore(payload.tailored.tailored_fit_score);
-      if (payload.docx_base64) {
-        const bytes = Uint8Array.from(atob(payload.docx_base64), (c) => c.charCodeAt(0));
-        const blob = new Blob([bytes], {
-          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = payload.file_name || "tailored-resume.docx";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }
-      setStatus(`Resume generated. ${payload.sheet_status}`);
+      setResumeDocxBase64(payload.docx_base64 || "");
+      setResumeFileName(payload.file_name || "tailored-resume.docx");
+      setStatus(`Resume generated. ${payload.sheet_status} Use Preview/Download below.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Tailor request failed.");
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const onDownloadDocx = () => {
+    if (!resumeDocxBase64) {
+      setStatus("Generate a resume first.");
+      return;
+    }
+    const bytes = Uint8Array.from(atob(resumeDocxBase64), (c) => c.charCodeAt(0));
+    const blob = new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = resumeFileName || "tailored-resume.docx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const onPreviewAndPrintPdf = () => {
+    if (!parsed || !tailoredResult) {
+      setStatus("Generate a tailored resume first.");
+      return;
+    }
+
+    const summaryHtml = tailoredResult.summary_points
+      .map((x) => `<li><span class="bullet">•</span><span class="item-text">${escapeHtml(x)}</span></li>`)
+      .join("");
+    const experienceHtml = tailoredResult.experience_points
+      .map((x) => `<li><span class="bullet">•</span><span class="item-text">${escapeHtml(x)}</span></li>`)
+      .join("");
+    const title = escapeHtml(parsed.title || "Tailored Resume");
+    const company = escapeHtml(parsed.company_or_vendor || "");
+    const location = escapeHtml(parsed.location || "");
+    const skillsLine = escapeHtml(tailoredResult.skills_line || "");
+    const note = escapeHtml(tailoredResult.contract_alignment_note || "");
+
+    const preview = window.open("", "_blank", "noopener,noreferrer");
+    if (!preview) {
+      setStatus("Popup blocked. Allow popups to open PDF preview.");
+      return;
+    }
+
+    preview.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Resume Preview</title>
+    <style>
+      body { font-family: Calibri, Arial, sans-serif; margin: 28px auto; max-width: 900px; color: #111; }
+      h1 { margin: 0 0 6px 0; font-size: 24px; }
+      h2 { margin: 20px 0 8px 0; font-size: 16px; text-transform: uppercase; letter-spacing: 0.4px; }
+      p { margin: 4px 0; line-height: 1.4; }
+      ul.resume-list { list-style: none; margin: 0; padding: 0; }
+      ul.resume-list li { display: flex; align-items: flex-start; margin: 6px 0; line-height: 1.35; }
+      .bullet { display: inline-block; width: 15pt; min-width: 15pt; }
+      .item-text { flex: 1; }
+      .meta { color: #444; margin-bottom: 10px; }
+      .hint { margin-top: 18px; color: #555; font-size: 13px; }
+      @media print { .hint { display: none; } body { margin: 0.5in; } }
+    </style>
+  </head>
+  <body>
+    <h1>${title}</h1>
+    <p class="meta">${company}${company && location ? " | " : ""}${location}</p>
+
+    <h2>Professional Summary</h2>
+    <ul class="resume-list">${summaryHtml}</ul>
+
+    <h2>Experience Highlights</h2>
+    <ul class="resume-list">${experienceHtml}</ul>
+
+    <h2>Skills</h2>
+    <p>${skillsLine}</p>
+
+    <h2>Notes</h2>
+    <p>${note}</p>
+
+    <p class="hint">Use browser Print (Cmd/Ctrl+P) to preview and save as PDF.</p>
+  </body>
+</html>`);
+    preview.document.close();
+    preview.focus();
   };
 
   const onGenerateEmail = async () => {
@@ -351,6 +438,14 @@ export default function HomePage() {
           <h2>🪄 Outputs</h2>
           <p><strong>Status:</strong> {status}</p>
           <p><strong>Resume Output:</strong> {resumePath || "Not generated yet"}</p>
+          <div className="actions">
+            <button type="button" onClick={onDownloadDocx} disabled={!resumeDocxBase64 || isBusy}>
+              Download Resume DOCX
+            </button>
+            <button type="button" onClick={onPreviewAndPrintPdf} disabled={!tailoredResult || isBusy}>
+              Preview and Print PDF
+            </button>
+          </div>
           <p><strong>Tailored Fit Score:</strong> {tailoredFitScore ?? "Not generated yet"}</p>
           <label htmlFor="email-template">Submission Email Template</label>
           <textarea id="email-template" value={emailTemplate} readOnly rows={12} />
