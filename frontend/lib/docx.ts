@@ -20,6 +20,19 @@ function decodeXmlEntities(value: string): string {
   return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 }
 
+export async function extractDocxPlainText(docxBase64: string): Promise<string> {
+  const cleaned = docxBase64.replace(/^data:.*;base64,/, "");
+  const zip = await JSZip.loadAsync(Buffer.from(cleaned, "base64"));
+  const file = zip.file("word/document.xml");
+  if (!file) throw new Error("Invalid DOCX: word/document.xml not found.");
+
+  const xml = await file.async("text");
+  const text = Array.from(xml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g))
+    .map((m) => decodeXmlEntities(m[1]))
+    .join(" ");
+  return safeText(text).replace(/\s+/g, " ").trim();
+}
+
 function paragraphText(paragraphXml: string): string {
   const text = Array.from(paragraphXml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g))
     .map((m) => decodeXmlEntities(m[1]))

@@ -15,35 +15,46 @@ function normalizeBullet(text: unknown): string {
     .trim();
 }
 
-export function computeTailoredFitScore(parsed: ParsedJD, tailored: TailoredContent): number {
+export function computeTailoredFitScore(parsed: ParsedJD, tailored: TailoredContent, fullResumeText = ""): number {
   const generatedEnough =
     tailored.summary_points.filter((x) => x.trim().length > 0).length >= 1 &&
     tailored.experience_points.filter((x) => x.trim().length > 0).length >= 1 &&
     tailored.skills_line.trim().length > 0;
 
-  // If tailoring produced meaningful content, keep the score in a highly positive range.
-  if (generatedEnough) {
-    const requiredRaw = parsed.required_terms.length ? parsed.required_terms : parsed.skills;
-    const required = Array.from(new Set(requiredRaw.map((x) => x.trim().toLowerCase()).filter(Boolean)));
-    const text = [
-      tailored.summary_points.join(" "),
-      tailored.experience_points.join(" "),
-      tailored.skills_line,
-      tailored.tailored_for_role,
-      parsed.title,
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    if (!required.length) return 100;
-    const covered = required.filter((term) => text.includes(term)).length;
-    const coverageRatio = covered / required.length;
-    if (coverageRatio >= 0.8) return 100;
-    if (coverageRatio >= 0.6) return 95;
-    return 90;
+  const requiredRaw = parsed.required_terms.length ? parsed.required_terms : parsed.skills;
+  const required = Array.from(new Set(requiredRaw.map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  if (!required.length) {
+    return Math.max(parsed.fit_score, generatedEnough ? Math.min(parsed.fit_score + 5, 100) : parsed.fit_score);
   }
 
-  return Math.max(parsed.fit_score, 85);
+  const text = [
+    fullResumeText,
+    tailored.summary_points.join(" "),
+    tailored.experience_points.join(" "),
+    tailored.skills_line,
+    tailored.tailored_for_role,
+    parsed.title,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const covered = required.filter((term) => text.includes(term)).length;
+  const coverageRatio = covered / required.length;
+
+  const completenessChecks = [
+    tailored.summary_points.some((x) => x.trim().length > 0),
+    tailored.experience_points.some((x) => x.trim().length > 0),
+    tailored.skills_line.trim().length > 0,
+  ];
+  const completenessRatio = completenessChecks.filter(Boolean).length / completenessChecks.length;
+
+  // Weighted score that reflects actual JD-term coverage in the generated resume.
+  const coverageScore = coverageRatio * 100;
+  const baselineScore = Math.max(parsed.fit_score, 1);
+  const rawScore = Math.round((coverageScore * 0.7) + (baselineScore * 0.2) + (completenessRatio * 10));
+
+  if (!generatedEnough) return Math.max(1, Math.min(rawScore - 5, 100));
+  return Math.max(1, Math.min(rawScore, 100));
 }
 
 export async function generateTailoredContent(

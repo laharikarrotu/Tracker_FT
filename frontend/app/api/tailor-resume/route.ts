@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseAndEnrichJD, parseRequestBody, parsedSummary, handleRouteError } from "@/lib/api";
 import { appConfig } from "@/lib/config";
-import { getTemplateBulletCounts, generateTailoredDocxFromTemplate } from "@/lib/docx";
+import { getTemplateBulletCounts, generateTailoredDocxFromTemplate, extractDocxPlainText } from "@/lib/docx";
 import { computeTailoredFitScore, generateTailoredContent } from "@/lib/generation";
 import { appendToGoogleSheet } from "@/lib/sheets";
 import { AppError } from "@/lib/common";
@@ -34,7 +34,6 @@ export async function POST(req: NextRequest) {
     );
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
     const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
-    const tailored_fit_score = computeTailoredFitScore(parsed, tailored);
 
     const replacementCaps = {
       maxSummaryReplacements: summaryCount,
@@ -50,6 +49,8 @@ export async function POST(req: NextRequest) {
       },
       replacementCaps
     );
+    const finalResumeText = await extractDocxPlainText(docx_base64);
+    const tailored_fit_score = computeTailoredFitScore(parsed, tailored, finalResumeText);
 
     const output_path = `generated/${Date.now()}-${(body.template_file_name || "tailored").replace(/\s+/g, "_")}`;
     let sheet_status = "Tailored record logged to Google Sheets.";
