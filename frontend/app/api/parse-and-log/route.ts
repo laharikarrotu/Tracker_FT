@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseAndEnrichJD, parseRequestBody, parsedSummary, handleRouteError } from "@/lib/api";
 import { appendToGoogleSheet } from "@/lib/sheets";
+import { buildAtsAnalysis } from "@/lib/generation";
+import { appConfig } from "@/lib/config";
+import { extractDocxPlainText } from "@/lib/docx";
+import { CANDIDATE_PROFILE_CONTEXT } from "@/lib/profile";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await parseRequestBody(req);
     const parsed = await parseAndEnrichJD(body);
+    let baselineText = CANDIDATE_PROFILE_CONTEXT;
+    if (appConfig.baseResumeDocxBase64) {
+      try {
+        baselineText = await extractDocxPlainText(appConfig.baseResumeDocxBase64);
+      } catch {
+        baselineText = CANDIDATE_PROFILE_CONTEXT;
+      }
+    }
+    const ats_analysis = buildAtsAnalysis(parsed, baselineText);
     let sheetStatus = "JD logged to Google Sheets.";
     try {
       const sheetResult = await appendToGoogleSheet({
@@ -27,6 +40,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       parsed: parsedSummary(parsed),
+      ats_analysis,
       sheet_status: sheetStatus,
     });
   } catch (error) {

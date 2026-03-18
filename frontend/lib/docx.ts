@@ -5,6 +5,7 @@ import type { TailoredContent, TemplateBulletCounts } from "@/lib/types";
 type DocxOptions = {
   maxSummaryReplacements: number;
   maxExperienceReplacements: number;
+  strictTemplateLock?: boolean;
 };
 
 function xmlEscape(value: string): string {
@@ -85,6 +86,7 @@ export async function generateTailoredDocxFromTemplate(
 
   const summaryEnd = [experienceHeader, skillsHeader, paragraphs.length].filter((x) => x > summaryHeader).sort((a, b) => a - b)[0];
   const expEnd = [skillsHeader, paragraphs.length].filter((x) => x > experienceHeader).sort((a, b) => a - b)[0];
+  const strictTemplateLock = options.strictTemplateLock ?? true;
 
   if (summaryHeader >= 0 && summaryEnd > summaryHeader) {
     const summaryBullets: number[] = [];
@@ -124,6 +126,17 @@ export async function generateTailoredDocxFromTemplate(
         replacements.set(i, replaceParagraphTextPreserveRuns(paragraphs[i], tailored.skills_line));
         break;
       }
+    }
+  }
+
+  if (strictTemplateLock) {
+    if (summaryHeader < 0 || experienceHeader < 0 || skillsHeader < 0) {
+      throw new Error("Template lock failed: required sections (Summary/Experience/Skills) were not found in template.");
+    }
+    const summaryApplied = Array.from(replacements.keys()).filter((idx) => idx > summaryHeader && idx < summaryEnd).length;
+    const experienceApplied = Array.from(replacements.keys()).filter((idx) => idx > experienceHeader && idx < expEnd).length;
+    if (summaryApplied === 0 || experienceApplied === 0) {
+      throw new Error("Template lock failed: could not safely map tailored bullets onto template bullet placeholders.");
     }
   }
 

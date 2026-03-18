@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseAndEnrichJD, parseRequestBody, parsedSummary, handleRouteError } from "@/lib/api";
 import { appConfig } from "@/lib/config";
 import { getTemplateBulletCounts, generateTailoredDocxFromTemplate, extractDocxPlainText } from "@/lib/docx";
-import { computeTailoredFitScore, generateTailoredContent } from "@/lib/generation";
+import { buildAtsAnalysis, computeFitScoreBreakdown, generateTailoredContent, validateTailoredQuality } from "@/lib/generation";
 import { appendToGoogleSheet } from "@/lib/sheets";
 import { AppError } from "@/lib/common";
 
@@ -25,13 +25,21 @@ export async function POST(req: NextRequest) {
     const counts = await getTemplateBulletCounts(templateDocxBase64);
     const summaryCount = counts.summaryCount;
     const experienceCount = counts.experienceCount;
+    const targetRoleMode = body.target_role_mode || "auto";
+    const strictTemplateLock = body.strict_template_lock ?? true;
+    const templateBeforeText = await extractDocxPlainText(templateDocxBase64);
 
     const tailored = await generateTailoredContent(
       parsed,
       summaryCount,
       experienceCount,
+      targetRoleMode,
       body.anthropic_api_key
     );
+    const qualityIssues = validateTailoredQuality(parsed, tailored);
+    if (qualityIssues.length) {
+      throw new AppError(`Tailored content quality check failed: ${qualityIssues.slice(0, 5).join(" | ")}`, 422);
+    }
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
     const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
 
@@ -47,10 +55,13 @@ export async function POST(req: NextRequest) {
         summary_points,
         experience_points
       },
-      replacementCaps
+      { ...replacementCaps, strictTemplateLock }
     );
     const finalResumeText = await extractDocxPlainText(docx_base64);
-    const tailored_fit_score = computeTailoredFitScore(parsed, tailored, finalResumeText);
+    const fit_breakdown = computeFitScoreBreakdown(parsed, tailored, templateBeforeText, finalResumeText, targetRoleMode);
+    const tailored_fit_score = fit_breakdown.tailored_fit_score;
+    const ats_before = buildAtsAnalysis(parsed, templateBeforeText);
+    const ats_after = buildAtsAnalysis(parsed, finalResumeText);
 
     const output_path = `generated/${Date.now()}-${(body.template_file_name || "tailored").replace(/\s+/g, "_")}`;
     let sheet_status = "Tailored record logged to Google Sheets.";
@@ -83,7 +94,10 @@ export async function POST(req: NextRequest) {
         skills_line: tailored.skills_line,
         contract_alignment_note: tailored.contract_alignment_note,
         tailored_fit_score,
+        fit_breakdown,
       },
+      ats_before,
+      ats_after,
       output_path,
       docx_base64,
       file_name: `Lahari_Karrotu_(${safeRoleForFileName(parsed.title)}).docx`,

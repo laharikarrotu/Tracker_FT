@@ -2,12 +2,18 @@
 
 import { FormEvent, useState } from "react";
 
+type RoleMode = "auto" | "backend" | "full-stack" | "ai-agent";
+
 type ParsedJD = {
   title: string;
   company_or_vendor: string;
   recruiter_name?: string;
+  hiring_manager?: string;
+  team?: string;
+  seniority?: string;
   vendor_email?: string;
   vendor_phone?: string;
+  visa_sponsorship?: string;
   location: string;
   contract_type: string;
   remote_mode?: string;
@@ -16,8 +22,31 @@ type ParsedJD = {
   skills: string[];
   role_track?: string;
   required_terms?: string[];
+  must_have_terms?: string[];
+  nice_to_have_terms?: string[];
   fit_score?: number;
   is_contract_like?: boolean;
+};
+
+type ATSAnalysis = {
+  required_terms: string[];
+  covered_terms: string[];
+  missing_terms: string[];
+  coverage_ratio: number;
+};
+
+type FitBreakdown = {
+  target_role_mode: RoleMode;
+  baseline_fit_score: number;
+  tailored_fit_score: number;
+  completeness_ratio: number;
+  coverage_before_ratio: number;
+  coverage_after_ratio: number;
+  required_terms: string[];
+  covered_before_terms: string[];
+  covered_after_terms: string[];
+  missing_before_terms: string[];
+  missing_after_terms: string[];
 };
 
 type TailoredResult = {
@@ -26,6 +55,7 @@ type TailoredResult = {
   skills_line: string;
   contract_alignment_note: string;
   tailored_fit_score: number;
+  fit_breakdown?: FitBreakdown;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -49,10 +79,16 @@ export default function HomePage() {
   const [sheetId, setSheetId] = useState("");
   const [sheetTab, setSheetTab] = useState("");
   const [serviceAccountJson, setServiceAccountJson] = useState("");
+  const [targetRoleMode, setTargetRoleMode] = useState<RoleMode>("auto");
+  const [strictTemplateLock, setStrictTemplateLock] = useState(true);
+  const [atsBefore, setAtsBefore] = useState<ATSAnalysis | null>(null);
+  const [atsAfter, setAtsAfter] = useState<ATSAnalysis | null>(null);
 
   const apiPayload = () => ({
     job_description: jobDescription,
     anthropic_api_key: anthropicApiKey || undefined,
+    target_role_mode: targetRoleMode,
+    strict_template_lock: strictTemplateLock,
     override_title: "",
     override_company: "",
     override_location: "",
@@ -115,11 +151,13 @@ export default function HomePage() {
     }
     try {
       setIsBusy(true);
-      const payload = await postJSON<{ parsed: ParsedJD; sheet_status: string }>(
+      const payload = await postJSON<{ parsed: ParsedJD; ats_analysis: ATSAnalysis; sheet_status: string }>(
         "/api/parse-and-log",
         apiPayload()
       );
       setParsed(payload.parsed);
+      setAtsBefore(payload.ats_analysis);
+      setAtsAfter(null);
       setStatus(payload.sheet_status);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Parse request failed.");
@@ -141,6 +179,8 @@ export default function HomePage() {
         output_path: string;
         docx_base64: string;
         file_name: string;
+        ats_before?: ATSAnalysis;
+        ats_after?: ATSAnalysis;
         sheet_status: string;
       }>("/api/tailor-resume", {
         ...apiPayload()
@@ -149,6 +189,8 @@ export default function HomePage() {
       setResumePath(payload.output_path);
       setTailoredResult(payload.tailored);
       setTailoredFitScore(payload.tailored.tailored_fit_score);
+      setAtsBefore(payload.ats_before || null);
+      setAtsAfter(payload.ats_after || null);
       setResumeDocxBase64(payload.docx_base64 || "");
       setResumeFileName(payload.file_name || "tailored-resume.docx");
       setStatus(`Resume generated. ${payload.sheet_status} Use Preview/Download below.`);
@@ -384,6 +426,28 @@ export default function HomePage() {
             }}
           />
 
+          <label htmlFor="target-role-mode">Target Role Mode</label>
+          <select
+            id="target-role-mode"
+            value={targetRoleMode}
+            onChange={(e) => setTargetRoleMode(e.target.value as RoleMode)}
+          >
+            <option value="auto">Auto</option>
+            <option value="backend">Backend</option>
+            <option value="full-stack">Full-stack</option>
+            <option value="ai-agent">AI Agent</option>
+          </select>
+
+          <label htmlFor="strict-template-lock">
+            <input
+              id="strict-template-lock"
+              type="checkbox"
+              checked={strictTemplateLock}
+              onChange={(e) => setStrictTemplateLock(e.target.checked)}
+            />
+            Strict template lock mode
+          </label>
+
           <div className="row">
             <small>
               Leave all fields empty to use default server env vars. Use overrides only for temporary testing.
@@ -414,10 +478,14 @@ export default function HomePage() {
           {parsed ? (
             <ul>
               <li><strong>Title:</strong> {parsed.title}</li>
-              <li><strong>company/vendor:</strong> {parsed.company_or_vendor || "Not specified"}</li>
+              <li><strong>company/hiring team:</strong> {parsed.company_or_vendor || "Not specified"}</li>
               <li><strong>recruiter_name:</strong> {parsed.recruiter_name || "Not specified"}</li>
-              <li><strong>vendor_email:</strong> {parsed.vendor_email || "Not specified"}</li>
-              <li><strong>vendor_phone:</strong> {parsed.vendor_phone || "Not specified"}</li>
+              <li><strong>hiring_manager:</strong> {parsed.hiring_manager || "Not specified"}</li>
+              <li><strong>team:</strong> {parsed.team || "Not specified"}</li>
+              <li><strong>seniority:</strong> {parsed.seniority || "Not specified"}</li>
+              <li><strong>contact_email:</strong> {parsed.vendor_email || "Not specified"}</li>
+              <li><strong>contact_phone:</strong> {parsed.vendor_phone || "Not specified"}</li>
+              <li><strong>visa_sponsorship:</strong> {parsed.visa_sponsorship || "Not specified"}</li>
               <li><strong>location:</strong> {parsed.location || "Not specified"}</li>
               <li><strong>remote_mode:</strong> {parsed.remote_mode || "Not specified"}</li>
               <li><strong>contract_type:</strong> {parsed.contract_type || "Not specified"}</li>
@@ -426,8 +494,10 @@ export default function HomePage() {
               <li><strong>skills[]:</strong> {parsed.skills.join(", ") || "No skills detected yet"}</li>
               <li><strong>role_track:</strong> {parsed.role_track || "general"}</li>
               <li><strong>required_terms[]:</strong> {(parsed.required_terms || []).join(", ") || "Not detected"}</li>
+              <li><strong>must_have_terms[]:</strong> {(parsed.must_have_terms || []).join(", ") || "Not detected"}</li>
+              <li><strong>nice_to_have_terms[]:</strong> {(parsed.nice_to_have_terms || []).join(", ") || "Not detected"}</li>
               <li><strong>fit_score:</strong> {parsed.fit_score ?? "N/A"}</li>
-              <li><strong>is_contract_like:</strong> {String(parsed.is_contract_like ?? false)}</li>
+              <li><strong>contract_terms_detected:</strong> {String(parsed.is_contract_like ?? false)}</li>
             </ul>
           ) : (
             <p>Click "Parse and Log JD" to see extracted fields.</p>
@@ -447,6 +517,26 @@ export default function HomePage() {
             </button>
           </div>
           <p><strong>Tailored Fit Score:</strong> {tailoredFitScore ?? "Not generated yet"}</p>
+          {tailoredResult?.fit_breakdown ? (
+            <p>
+              <strong>Fit Breakdown:</strong>{" "}
+              before {(tailoredResult.fit_breakdown.coverage_before_ratio * 100).toFixed(0)}% → after{" "}
+              {(tailoredResult.fit_breakdown.coverage_after_ratio * 100).toFixed(0)}% | completeness{" "}
+              {(tailoredResult.fit_breakdown.completeness_ratio * 100).toFixed(0)}%
+            </p>
+          ) : null}
+          {atsBefore ? (
+            <p>
+              <strong>ATS Before:</strong> missing {atsBefore.missing_terms.length} / {atsBefore.required_terms.length} terms
+              {atsBefore.missing_terms.length ? ` (${atsBefore.missing_terms.join(", ")})` : ""}
+            </p>
+          ) : null}
+          {atsAfter ? (
+            <p>
+              <strong>ATS After:</strong> missing {atsAfter.missing_terms.length} / {atsAfter.required_terms.length} terms
+              {atsAfter.missing_terms.length ? ` (${atsAfter.missing_terms.join(", ")})` : ""}
+            </p>
+          ) : null}
           <label htmlFor="email-template">Submission Email Template</label>
           <textarea id="email-template" value={emailTemplate} readOnly rows={12} />
           <label htmlFor="cover-letter">Cover Letter</label>

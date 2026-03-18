@@ -1,28 +1,11 @@
 import { appConfig } from "@/lib/config";
 import { callClaudeWithFallback } from "@/lib/anthropic";
 import { AppError, extractJsonObject, safeText } from "@/lib/common";
+import { CANDIDATE_PROFILE_SKILLS } from "@/lib/profile";
 import type { ClaudeExtraction, ParsedJD } from "@/lib/types";
 
-const CONTRACT_TERMS = ["contract", "c2c", "corp-to-corp", "w2", "1099", "contractor", "vendor"];
-const BASELINE_CANDIDATE_SKILLS = new Set([
-  "python",
-  "pyspark",
-  "spark",
-  "sql",
-  "snowflake",
-  "airflow",
-  "dbt",
-  "databricks",
-  "aws",
-  "azure",
-  "gcp",
-  "etl",
-  "kafka",
-  "redshift",
-  "bigquery",
-  "data modeling",
-  "data warehousing",
-]);
+const CONTRACT_TERMS = ["contract", "c2c", "corp-to-corp", "w2", "1099", "contractor", "temporary"];
+const BASELINE_CANDIDATE_SKILLS = new Set(CANDIDATE_PROFILE_SKILLS.map((x) => x.toLowerCase()));
 
 const SKILL_PATTERNS: Array<{ canonical: string; pattern: RegExp }> = [
   { canonical: "python", pattern: /\bpython\b/i },
@@ -100,6 +83,35 @@ function extractRequiredTerms(rawJD: string): string[] {
   return Array.from(terms);
 }
 
+function extractLabeledList(rawJD: string, labelPattern: RegExp): string[] {
+  const lines = rawJD.split("\n").map((x) => x.trim()).filter(Boolean);
+  const out = new Set<string>();
+  for (const line of lines) {
+    if (!labelPattern.test(line)) continue;
+    for (const item of SKILL_PATTERNS) {
+      if (item.pattern.test(line)) out.add(item.canonical);
+    }
+  }
+  return Array.from(out);
+}
+
+function inferSeniority(title: string, rawJD: string): string {
+  const t = `${title} ${rawJD}`.toLowerCase();
+  if (/\bstaff\b|\bprincipal\b/.test(t)) return "Staff/Principal";
+  if (/\bsenior\b|\bsr\.?\b|\blead\b/.test(t)) return "Senior";
+  if (/\bmid\b|\bintermediate\b/.test(t)) return "Mid-level";
+  if (/\bjunior\b|\bintern\b|\bentry\b/.test(t)) return "Junior/Entry";
+  return "";
+}
+
+function detectVisaSponsorship(rawJD: string): string {
+  const lower = rawJD.toLowerCase();
+  if (/no sponsorship|cannot sponsor|unable to sponsor/.test(lower)) return "No sponsorship";
+  if (/sponsorship available|will sponsor|visa sponsorship/.test(lower)) return "Sponsorship available";
+  if (/usc|citizen|gc|green card|h1b/.test(lower)) return "Work authorization constraints mentioned";
+  return "";
+}
+
 function inferRoleTrack(title: string, rawJD: string): string {
   const text = `${title}\n${rawJD}`.toLowerCase();
   let best = "general";
@@ -130,14 +142,18 @@ export function computeFitScore(input: {
 }): number {
   const lower = input.rawJD.toLowerCase();
   const yearsRequired = parseYearsRequired(input.rawJD);
-  let fitScore = lower.includes("data engineer") || lower.includes("data engineering") ? 30 : 10;
+  const titleLower = input.title.toLowerCase();
+  const roleAligned =
+    /software engineer|backend|full[- ]?stack|api|platform|ai|ml|data engineer|data engineering/.test(lower) ||
+    /software engineer|backend|full[- ]?stack|ai|data engineer/.test(titleLower);
+  let fitScore = roleAligned ? 25 : 10;
   const requiredCoverageBase = input.required_terms.length ? input.required_terms : input.skills;
   const coveredRequired = requiredCoverageBase.filter((s) => BASELINE_CANDIDATE_SKILLS.has(s)).length;
   fitScore += requiredCoverageBase.length
     ? Math.round((coveredRequired / requiredCoverageBase.length) * 45)
     : Math.min(input.skills.length * 4, 30);
   if (input.role_track !== "general") fitScore += 10;
-  if (input.is_contract_like) fitScore += 10;
+  if (input.is_contract_like) fitScore -= 5;
   if (yearsRequired > 0 && yearsRequired <= 10) fitScore += 5;
   return Math.max(1, Math.min(fitScore, 100));
 }
@@ -153,6 +169,11 @@ export function parseJobDescription(rawJD: string): ParsedJD {
   const contract_type = firstMatch(/(?:employment type|contract type|type)\s*[:\-]\s*([^\n\r]+)/i, rawJD);
   const recruiter_name = safeText(
     firstMatch(/(?:i am|i'm)\s+([^,\n]+)/i, rawJD) || firstMatch(/(?:recruiter)\s*[:\-]\s*([^\n\r]+)/i, rawJD)
+  );
+  const hiring_manager = safeText(firstMatch(/(?:hiring manager|manager)\s*[:\-]\s*([^\n\r]+)/i, rawJD));
+  const team = safeText(
+    firstMatch(/(?:team|department|org|organization)\s*[:\-]\s*([^\n\r]+)/i, rawJD) ||
+      firstMatch(/(?:join|within)\s+the\s+([A-Za-z0-9 &-]{3,})\s+team/i, rawJD)
   );
   const vendor_email = safeText(
     firstMatch(/(?:share suitable profiles to|email)\s*[:\-]?\s*([^\s,\n]+)/i, rawJD) || firstEmail(rawJD)
@@ -170,6 +191,10 @@ export function parseJobDescription(rawJD: string): ParsedJD {
   const is_contract_like = CONTRACT_TERMS.some((term) => lower.includes(term));
   const role_track = inferRoleTrack(title, rawJD);
   const required_terms = extractRequiredTerms(rawJD);
+  const must_have_terms = extractLabeledList(rawJD, /must have|required|required qualifications|mandatory|must/i);
+  const nice_to_have_terms = extractLabeledList(rawJD, /nice to have|preferred|plus|good to have/i);
+  const seniority = inferSeniority(title, rawJD);
+  const visa_sponsorship = detectVisaSponsorship(rawJD);
   const remote_mode =
     (lower.includes("hybrid") && "Hybrid") || (lower.includes("remote") && "Remote") || (lower.includes("onsite") && "Onsite") || "";
 
@@ -187,8 +212,12 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     title,
     company_or_vendor: safeText(company_or_vendor),
     recruiter_name,
+    hiring_manager,
+    team,
+    seniority,
     vendor_email,
     vendor_phone,
+    visa_sponsorship,
     location: safeText(location),
     contract_type: contract_type || (is_contract_like ? "Contract" : ""),
     remote_mode,
@@ -197,7 +226,9 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     skills,
     role_track,
     required_terms,
-    notes: is_contract_like ? "Contract-focused fit" : "Needs manual contract check",
+    must_have_terms,
+    nice_to_have_terms,
+    notes: is_contract_like ? "Contract-style terms detected in JD." : "Full-time fit estimated from JD terms.",
     is_contract_like,
     fit_score,
   };
@@ -229,8 +260,12 @@ function parseClaudeExtraction(text: string): ClaudeExtraction {
     title: str(data.title),
     company_or_vendor: str(data.company_or_vendor),
     recruiter_name: str(data.recruiter_name),
+    hiring_manager: str(data.hiring_manager),
+    team: str(data.team),
+    seniority: str(data.seniority),
     vendor_email: str(data.vendor_email),
     vendor_phone: str(data.vendor_phone),
+    visa_sponsorship: str(data.visa_sponsorship),
     location: str(data.location),
     contract_type: str(data.contract_type),
     remote_mode: str(data.remote_mode),
@@ -239,6 +274,8 @@ function parseClaudeExtraction(text: string): ClaudeExtraction {
     skills: arr(data.skills),
     role_track: str(data.role_track),
     required_terms: arr(data.required_terms),
+    must_have_terms: arr(data.must_have_terms),
+    nice_to_have_terms: arr(data.nice_to_have_terms),
   };
 }
 
@@ -257,8 +294,12 @@ Schema:
   "title": "",
   "company_or_vendor": "",
   "recruiter_name": "",
+  "hiring_manager": "",
+  "team": "",
+  "seniority": "",
   "vendor_email": "",
   "vendor_phone": "",
+  "visa_sponsorship": "",
   "location": "",
   "contract_type": "",
   "remote_mode": "",
@@ -266,7 +307,9 @@ Schema:
   "job_id_url": "",
   "skills": [],
   "role_track": "",
-  "required_terms": []
+  "required_terms": [],
+  "must_have_terms": [],
+  "nice_to_have_terms": []
 }
 
 role_track should be one of:
@@ -293,8 +336,12 @@ ${rawJD}
       title: extracted.title || baseline.title,
       company_or_vendor: extracted.company_or_vendor || baseline.company_or_vendor,
       recruiter_name: extracted.recruiter_name || baseline.recruiter_name,
+      hiring_manager: extracted.hiring_manager || baseline.hiring_manager,
+      team: extracted.team || baseline.team,
+      seniority: extracted.seniority || baseline.seniority,
       vendor_email: extracted.vendor_email || baseline.vendor_email,
       vendor_phone: extracted.vendor_phone || baseline.vendor_phone,
+      visa_sponsorship: extracted.visa_sponsorship || baseline.visa_sponsorship,
       location: extracted.location || baseline.location,
       contract_type: extracted.contract_type || baseline.contract_type,
       remote_mode: extracted.remote_mode || baseline.remote_mode,
@@ -303,6 +350,8 @@ ${rawJD}
       skills: mergeList(baseline.skills, extracted.skills),
       role_track: extracted.role_track || baseline.role_track,
       required_terms: mergeList(baseline.required_terms, extracted.required_terms),
+      must_have_terms: mergeList(baseline.must_have_terms, extracted.must_have_terms),
+      nice_to_have_terms: mergeList(baseline.nice_to_have_terms, extracted.nice_to_have_terms),
       is_contract_like:
         baseline.is_contract_like ||
         /contract|c2c|w2|1099/i.test(extracted.contract_type || "") ||
