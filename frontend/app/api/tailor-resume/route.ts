@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     const summaryCount = counts.summaryCount;
     const experienceCount = counts.experienceCount;
     const targetRoleMode = body.target_role_mode || "auto";
-    const strictTemplateLock = body.strict_template_lock ?? true;
+    const strictTemplateLock = body.strict_template_lock ?? false;
     const templateBeforeText = await extractDocxPlainText(templateDocxBase64);
 
     const tailored = await generateTailoredContent(
@@ -37,9 +37,6 @@ export async function POST(req: NextRequest) {
       body.anthropic_api_key
     );
     const qualityIssues = validateTailoredQuality(parsed, tailored);
-    if (qualityIssues.length) {
-      throw new AppError(`Tailored content quality check failed: ${qualityIssues.slice(0, 5).join(" | ")}`, 422);
-    }
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));
     const experience_points = tailored.experience_points.map((x) => x.trim().replace(/\s+/g, " "));
 
@@ -65,6 +62,9 @@ export async function POST(req: NextRequest) {
 
     const output_path = `generated/${Date.now()}-${(body.template_file_name || "tailored").replace(/\s+/g, "_")}`;
     let sheet_status = "Tailored record logged to Google Sheets.";
+    if (qualityIssues.length) {
+      sheet_status = `Resume generated with warnings: ${qualityIssues.slice(0, 2).join(" | ")}`;
+    }
     try {
       const sheetResult = await appendToGoogleSheet({
         parsed,
@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
         },
       });
       if (sheetResult.duplicateLikely) {
-        sheet_status = "Resume generated. Existing duplicate row was updated in Google Sheets.";
+        const prefix = qualityIssues.length ? `${sheet_status} ` : "Resume generated. ";
+        sheet_status = `${prefix}Existing duplicate row was updated in Google Sheets.`;
       }
     } catch (sheetError) {
       const message = sheetError instanceof Error ? sheetError.message : "Unknown Sheets error";

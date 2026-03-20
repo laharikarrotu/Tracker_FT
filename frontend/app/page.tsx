@@ -80,7 +80,7 @@ export default function HomePage() {
   const [sheetTab, setSheetTab] = useState("");
   const [serviceAccountJson, setServiceAccountJson] = useState("");
   const [targetRoleMode, setTargetRoleMode] = useState<RoleMode>("auto");
-  const [strictTemplateLock, setStrictTemplateLock] = useState(true);
+  const [strictTemplateLock, setStrictTemplateLock] = useState(false);
   const [atsBefore, setAtsBefore] = useState<ATSAnalysis | null>(null);
   const [atsAfter, setAtsAfter] = useState<ATSAnalysis | null>(null);
 
