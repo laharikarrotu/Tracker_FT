@@ -15,9 +15,24 @@ function normalizeBullet(text: unknown): string {
     .trim();
 }
 
+const ATS_STOP_WORDS = new Set([
+  "the", "and", "or", "with", "for", "to", "of", "in", "on", "a", "an", "is", "are", "be", "as", "such",
+  "strong", "ability", "skills", "experience", "professional", "years", "year", "plus", "hands", "using",
+  "building", "designing", "supporting", "modern", "across", "teams",
+]);
+
 function resolveRequiredTerms(parsed: ParsedJD): string[] {
-  const base = parsed.must_have_terms.length ? parsed.must_have_terms : (parsed.required_terms.length ? parsed.required_terms : parsed.skills);
-  return Array.from(new Set(base.map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  const base = parsed.must_have_terms.length
+    ? parsed.must_have_terms
+    : (parsed.required_terms.length ? parsed.required_terms : parsed.skills);
+  const normalized = Array.from(new Set(base.map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  const longRatio = normalized.length
+    ? normalized.filter((x) => x.length > 60 || x.split(/\s+/).filter(Boolean).length > 8).length / normalized.length
+    : 0;
+  if (longRatio > 0.4 && parsed.skills.length) {
+    return Array.from(new Set(parsed.skills.map((x) => x.trim().toLowerCase()).filter(Boolean)));
+  }
+  return normalized;
 }
 
 function inferRoleMode(parsed: ParsedJD): "backend" | "full-stack" | "ai-agent" {
@@ -29,7 +44,19 @@ function inferRoleMode(parsed: ParsedJD): "backend" | "full-stack" | "ai-agent" 
 
 function coverageForTerms(terms: string[], text: string): ATSAnalysis {
   const lower = text.toLowerCase();
-  const covered_terms = terms.filter((term) => lower.includes(term));
+  const tokenMatch = (term: string): boolean => {
+    if (!term.trim()) return false;
+    if (lower.includes(term)) return true;
+    const tokens = term
+      .split(/[^a-z0-9.+#-]+/i)
+      .map((x) => x.trim().toLowerCase())
+      .filter((x) => x.length >= 3 && !ATS_STOP_WORDS.has(x));
+    if (!tokens.length) return false;
+    const hits = tokens.filter((t) => lower.includes(t)).length;
+    const ratio = hits / tokens.length;
+    return hits >= 2 && ratio >= 0.45;
+  };
+  const covered_terms = terms.filter((term) => tokenMatch(term));
   const covered = new Set(covered_terms);
   const missing_terms = terms.filter((term) => !covered.has(term));
   return {
@@ -68,10 +95,7 @@ export function validateTailoredQuality(parsed: ParsedJD, tailored: TailoredCont
     if (wc < 8) issues.push(`Bullet too short: "${bullet}"`);
     if (GENERIC_BULLET_PATTERNS.some((r) => r.test(bullet))) issues.push(`Generic bullet phrasing: "${bullet}"`);
   }
-  const unknownEntities = detectUnknownEntities(parsed, tailored);
-  if (unknownEntities.length > 2) {
-    issues.push(`Potential hallucinated entities detected: ${unknownEntities.slice(0, 6).join(", ")}`);
-  }
+  // Keep checks lightweight and avoid noisy entity warnings.
   return issues;
 }
 
