@@ -46,6 +46,16 @@ function isBulletParagraph(paragraphXml: string, plainText: string): boolean {
   return /^[-*•]/.test(plainText);
 }
 
+function hasWordBulletNumbering(paragraphXml: string): boolean {
+  return /<w:numPr[\s\S]*?<\/w:numPr>/.test(paragraphXml);
+}
+
+function getLiteralBulletPrefix(plainText: string): string {
+  const m = plainText.match(/^\s*([-*•])\s+/);
+  if (!m) return "";
+  return `${m[1]} `;
+}
+
 function replaceParagraphTextPreserveRuns(paragraphXml: string, newText: string): string {
   const first = paragraphXml.replace(/<w:t([^>]*)>[\s\S]*?<\/w:t>/, `<w:t$1>${xmlEscape(newText)}</w:t>`);
   return first.replace(/(<w:t[^>]*>)[\s\S]*?(<\/w:t>)/g, (m, a, b, idx) => {
@@ -99,7 +109,9 @@ export async function generateTailoredDocxFromTemplate(
       const idx = summaryBullets[i];
       const line = safeText(tailored.summary_points[i] || "");
       if (!line) continue;
-      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], line));
+      const originalText = paragraphText(paragraphs[idx]);
+      const prefix = hasWordBulletNumbering(paragraphs[idx]) ? "" : getLiteralBulletPrefix(originalText);
+      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], `${prefix}${line}`));
     }
   }
 
@@ -114,7 +126,9 @@ export async function generateTailoredDocxFromTemplate(
       const idx = expBullets[i];
       const line = safeText(tailored.experience_points[i] || "");
       if (!line) continue;
-      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], line));
+      const originalText = paragraphText(paragraphs[idx]);
+      const prefix = hasWordBulletNumbering(paragraphs[idx]) ? "" : getLiteralBulletPrefix(originalText);
+      replacements.set(idx, replaceParagraphTextPreserveRuns(paragraphs[idx], `${prefix}${line}`));
     }
   }
 
