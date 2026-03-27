@@ -112,6 +112,26 @@ function detectVisaSponsorship(rawJD: string): string {
   return "";
 }
 
+function normalizeKeywordList(values: string[] | undefined): string[] {
+  if (!values || !values.length) return [];
+  const aliases: Record<string, string> = {
+    nodejs: "node.js",
+    node: "node.js",
+    postgres: "postgresql",
+    postgresql: "postgresql",
+    nest: "nestjs",
+    "rest api": "rest apis",
+    "restful api": "rest apis",
+    js: "javascript",
+    ts: "typescript",
+  };
+  const cleaned = values
+    .map((x) => safeText(String(x)).toLowerCase().trim())
+    .map((x) => aliases[x] || x)
+    .filter(Boolean);
+  return Array.from(new Set(cleaned));
+}
+
 function inferRoleTrack(title: string, rawJD: string): string {
   const text = `${title}\n${rawJD}`.toLowerCase();
   let best = "general";
@@ -228,6 +248,7 @@ export function parseJobDescription(rawJD: string): ParsedJD {
     required_terms,
     must_have_terms,
     nice_to_have_terms,
+    keyword_source: "rule-based",
     notes: is_contract_like ? "Contract-style terms detected in JD." : "Full-time fit estimated from JD terms.",
     is_contract_like,
     fit_score,
@@ -315,6 +336,13 @@ Schema:
 role_track should be one of:
 general, salesforce, azure, aws, gcp, databricks, snowflake
 
+Keyword extraction requirements:
+- Return concise technical keywords and short noun phrases only.
+- Do NOT return long sentence-style requirements.
+- Prefer stack terms (languages, frameworks, databases, cloud, architecture patterns).
+- must_have_terms should be strict requirements from JD.
+- nice_to_have_terms should be optional/preferred requirements.
+
 JD:
 ${rawJD}
 `;
@@ -330,7 +358,22 @@ ${rawJD}
       attemptsPerModel: 4,
     });
     const extracted = parseClaudeExtraction(text);
+    const claudeSkills = normalizeKeywordList(extracted.skills);
+    const claudeRequired = normalizeKeywordList(extracted.required_terms);
+    const claudeMust = normalizeKeywordList(extracted.must_have_terms);
+    const claudeNice = normalizeKeywordList(extracted.nice_to_have_terms);
+    const hasClaudeKeywords = claudeMust.length > 0 || claudeRequired.length > 0 || claudeSkills.length > 0;
     const mergeList = (a: string[], b?: string[]) => Array.from(new Set([...(a || []), ...((b || []).filter(Boolean))]));
+    const selectedSkills = hasClaudeKeywords && claudeSkills.length ? claudeSkills : mergeList(baseline.skills, extracted.skills);
+    const selectedRequired = hasClaudeKeywords
+      ? (claudeRequired.length ? claudeRequired : (claudeSkills.length ? claudeSkills : baseline.required_terms))
+      : mergeList(baseline.required_terms, extracted.required_terms);
+    const selectedMust = hasClaudeKeywords
+      ? (claudeMust.length ? claudeMust : selectedRequired)
+      : mergeList(baseline.must_have_terms, extracted.must_have_terms);
+    const selectedNice = hasClaudeKeywords
+      ? claudeNice
+      : mergeList(baseline.nice_to_have_terms, extracted.nice_to_have_terms);
     const merged: ParsedJD = {
       ...baseline,
       title: extracted.title || baseline.title,
@@ -347,11 +390,12 @@ ${rawJD}
       remote_mode: extracted.remote_mode || baseline.remote_mode,
       pay_rate: extracted.pay_rate || baseline.pay_rate,
       job_id_url: extracted.job_id_url || baseline.job_id_url,
-      skills: mergeList(baseline.skills, extracted.skills),
+      skills: selectedSkills,
       role_track: extracted.role_track || baseline.role_track,
-      required_terms: mergeList(baseline.required_terms, extracted.required_terms),
-      must_have_terms: mergeList(baseline.must_have_terms, extracted.must_have_terms),
-      nice_to_have_terms: mergeList(baseline.nice_to_have_terms, extracted.nice_to_have_terms),
+      required_terms: selectedRequired,
+      must_have_terms: selectedMust,
+      nice_to_have_terms: selectedNice,
+      keyword_source: hasClaudeKeywords ? "claude" : "rule-based",
       is_contract_like:
         baseline.is_contract_like ||
         /contract|c2c|w2|1099/i.test(extracted.contract_type || "") ||

@@ -42,6 +42,7 @@ export function parsedSummary(parsed: ParsedJD) {
     required_terms: parsed.required_terms,
     must_have_terms: parsed.must_have_terms,
     nice_to_have_terms: parsed.nice_to_have_terms,
+    keyword_source: parsed.keyword_source,
     fit_score: parsed.fit_score,
     is_contract_like: parsed.is_contract_like,
   };

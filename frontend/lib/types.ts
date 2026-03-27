@@ -35,6 +35,7 @@ export type ParsedJD = {
   required_terms: string[];
   must_have_terms: string[];
   nice_to_have_terms: string[];
+  keyword_source: "claude" | "rule-based";
   notes: string;
   is_contract_like: boolean;
   fit_score: number;
