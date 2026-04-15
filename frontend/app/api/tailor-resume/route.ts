@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
       summaryCount,
       experienceCount,
       targetRoleMode,
-      body.anthropic_api_key
+      body.anthropic_api_key,
+      body.custom_tailor_prompt
     );
     const qualityIssues = validateTailoredQuality(parsed, tailored);
     const summary_points = tailored.summary_points.map((x) => x.trim().replace(/\s+/g, " "));

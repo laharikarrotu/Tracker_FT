@@ -1,5 +1,6 @@
 export type JDRequestBody = {
   job_description: string;
+  custom_tailor_prompt?: string;
   anthropic_api_key?: string;
   target_role_mode?: "auto" | "backend" | "full-stack" | "ai-agent";
   strict_template_lock?: boolean;

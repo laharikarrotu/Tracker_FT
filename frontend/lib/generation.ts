@@ -174,7 +174,8 @@ export async function generateTailoredContent(
   summaryCount: number,
   experienceCount: number,
   targetRoleMode: "auto" | "backend" | "full-stack" | "ai-agent" = "auto",
-  anthropicApiKey?: string
+  anthropicApiKey?: string,
+  customTailorPrompt?: string
 ): Promise<TailoredContent> {
   const roleMode = targetRoleMode === "auto" ? inferRoleMode(parsed) : targetRoleMode;
   const roleModeInstruction =
@@ -183,6 +184,12 @@ export async function generateTailoredContent(
       : roleMode === "full-stack"
         ? "Prioritize full-stack impact, APIs, backend reliability, and frontend integration quality."
         : "Prioritize backend API scalability, data pipelines, cloud infra, and performance tuning.";
+  const customPromptSection = normalizeLine(customTailorPrompt)
+    ? `
+Additional user instructions (highest priority if factual and non-contradictory):
+${normalizeLine(customTailorPrompt)}
+`
+    : "";
   const prompt = `
 You are an expert full-time resume writer for ${CANDIDATE_PROFILE.defaultRoleFamily} roles.
 Return ONLY JSON:
@@ -221,6 +228,7 @@ Parsed fields:
 - required_terms: ${parsed.required_terms.join(", ")}
 - extracted_skills: ${parsed.skills.join(", ")}
 - fit_score: ${parsed.fit_score}
+${customPromptSection}
 `;
   const text = await callClaudeWithFallback({
     prompt,

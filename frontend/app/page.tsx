@@ -63,6 +63,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 export default function HomePage() {
   const [jobDescription, setJobDescription] = useState("");
+  const [customTailorPrompt, setCustomTailorPrompt] = useState("");
   const [status, setStatus] = useState("Ready");
   const [emailTemplate, setEmailTemplate] = useState("");
   const [coverLetter, setCoverLetter] = useState("");
@@ -87,6 +88,7 @@ export default function HomePage() {
 
   const apiPayload = () => ({
     job_description: jobDescription,
+    custom_tailor_prompt: customTailorPrompt || undefined,
     anthropic_api_key: anthropicApiKey || undefined,
     target_role_mode: targetRoleMode,
     strict_template_lock: strictTemplateLock,
@@ -289,6 +291,15 @@ export default function HomePage() {
           onChange={(e) => setJobDescription(e.target.value)}
           placeholder="Paste LinkedIn, email, or portal JD here..."
           rows={14}
+        />
+
+        <label htmlFor="custom-tailor-prompt">Custom Tailoring Prompt (optional)</label>
+        <textarea
+          id="custom-tailor-prompt"
+          value={customTailorPrompt}
+          onChange={(e) => setCustomTailorPrompt(e.target.value)}
+          placeholder="Example: Emphasize backend distributed systems, Java/Spring Boot, Kubernetes, and measurable impact. Keep concise ATS-friendly bullets."
+          rows={4}
         />
 
         <details className="row">
